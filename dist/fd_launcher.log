@@ -1,0 +1,66 @@
+2025-05-14 15:08:33,332 - INFO - root - main:39 - Launcher main.py started.
+2025-05-14 15:08:33,333 - INFO - root - main:40 - sys.executable: C:\Users\korbe\OneDrive\Documents\GitHub\FD_Terminal_Game\dist\main.exe
+2025-05-14 15:08:33,333 - INFO - root - main:41 - sys.argv: ['C:\\Users\\korbe\\OneDrive\\Documents\\GitHub\\FD_Terminal_Game\\dist\\main.exe']
+2025-05-14 15:08:33,333 - INFO - root - main:42 - os.getcwd(): C:\Users\korbe\OneDrive\Documents\GitHub\FD_Terminal_Game\dist
+2025-05-14 15:08:33,333 - INFO - root - main:43 - application_path: C:\Users\korbe\OneDrive\Documents\GitHub\FD_Terminal_Game\dist
+2025-05-14 15:08:33,333 - INFO - root - main:44 - sys.path: ['C:\\Users\\korbe\\OneDrive\\Documents\\GitHub\\FD_Terminal_Game\\dist', 'C:\\Users\\korbe\\AppData\\Local\\Temp\\_MEI188842\\base_library.zip', 'C:\\Users\\korbe\\AppData\\Local\\Temp\\_MEI188842\\lib-dynload', 'C:\\Users\\korbe\\AppData\\Local\\Temp\\_MEI188842', 'C:\\Users\\korbe\\AppData\\Local\\Temp\\_MEI188842\\win32', 'C:\\Users\\korbe\\AppData\\Local\\Temp\\_MEI188842\\pywin32_system32']
+2025-05-14 15:08:33,333 - INFO - root - main:45 - Is frozen (bundled): True
+2025-05-14 15:08:33,334 - INFO - root - main:47 - sys._MEIPASS: C:\Users\korbe\AppData\Local\Temp\_MEI188842
+2025-05-14 15:08:33,334 - INFO - root - main:51 - Attempting to import FinalDestinationApp from fd_terminal.main
+2025-05-14 15:08:33,356 - INFO - kivy - __init__:512 - Kivy: v2.3.1
+2025-05-14 15:08:33,358 - INFO - kivy - logger:284 - Logger: Record log in C:\Users\korbe\.kivy\logs\kivy_25-05-14_25.txt
+2025-05-14 15:08:33,359 - INFO - kivy - __init__:513 - Kivy: Installed at "C:\Users\korbe\AppData\Local\Temp\_MEI188842\kivy\__init__.pyc"
+2025-05-14 15:08:33,359 - INFO - kivy - __init__:514 - Python: v3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]
+2025-05-14 15:08:33,360 - INFO - kivy - __init__:515 - Python: Interpreter at "C:\Users\korbe\OneDrive\Documents\GitHub\FD_Terminal_Game\dist\main.exe"
+2025-05-14 15:08:33,360 - INFO - kivy - logger:232 - Logger: Purge log fired. Processing...
+2025-05-14 15:08:33,372 - INFO - kivy - logger:249 - Logger: Purge finished!
+2025-05-14 15:08:33,461 - INFO - kivy - factory:186 - Factory: 195 symbols loaded
+2025-05-14 15:08:33,594 - INFO - kivy - __init__:145 - Image: Providers: img_tex, img_dds, img_sdl2 (img_pil, img_ffpyplayer ignored)
+2025-05-14 15:08:33,637 - INFO - kivy - __init__:67 - Text: Provider: sdl2
+2025-05-14 15:08:33,669 - INFO - kivy - __init__:67 - Window: Provider: sdl2
+2025-05-14 15:08:34,056 - INFO - kivy - __init__:45 - GL: Using the "OpenGL" graphics system
+2025-05-14 15:08:34,062 - INFO - kivy - __init__:45 - GL: GLEW initialization succeeded
+2025-05-14 15:08:34,065 - INFO - kivy - __init__:51 - GL: Backend used <glew>
+2025-05-14 15:08:34,066 - INFO - kivy - __init__:55 - GL: OpenGL version <b'4.3.0 - Build 10.18.15.4248'>
+2025-05-14 15:08:34,070 - INFO - kivy - __init__:56 - GL: OpenGL vendor <b'Intel'>
+2025-05-14 15:08:34,074 - INFO - kivy - __init__:57 - GL: OpenGL renderer <b'Intel(R) HD Graphics 4600'>
+2025-05-14 15:08:34,077 - INFO - kivy - __init__:61 - GL: OpenGL parsed version: 4, 3
+2025-05-14 15:08:34,080 - INFO - kivy - __init__:81 - GL: Shading version <b'4.30 - Build 10.18.15.4248'>
+2025-05-14 15:08:34,089 - INFO - kivy - __init__:83 - GL: Texture max size <16384>
+2025-05-14 15:08:34,098 - INFO - kivy - __init__:85 - GL: Texture max units <32>
+2025-05-14 15:08:34,157 - INFO - kivy - window_sdl2:369 - Window: auto add sdl2 input provider
+2025-05-14 15:08:34,165 - INFO - kivy - __init__:2308 - Window: virtual keyboard not allowed, single mode, not docked
+2025-05-14 15:08:34,214 - INFO - root - main:54 - Import successful.
+2025-05-14 15:11:57,927 - INFO - root - main:39 - Launcher main.py started.
+2025-05-14 15:11:57,927 - INFO - root - main:40 - sys.executable: C:\Users\korbe\OneDrive\Documents\GitHub\FD_Terminal_Game\dist\main.exe
+2025-05-14 15:11:57,927 - INFO - root - main:41 - sys.argv: ['C:\\Users\\korbe\\OneDrive\\Documents\\GitHub\\FD_Terminal_Game\\dist\\main.exe']
+2025-05-14 15:11:57,927 - INFO - root - main:42 - os.getcwd(): C:\Users\korbe\OneDrive\Documents\GitHub\FD_Terminal_Game\dist
+2025-05-14 15:11:57,927 - INFO - root - main:43 - application_path: C:\Users\korbe\OneDrive\Documents\GitHub\FD_Terminal_Game\dist
+2025-05-14 15:11:57,927 - INFO - root - main:44 - sys.path: ['C:\\Users\\korbe\\OneDrive\\Documents\\GitHub\\FD_Terminal_Game\\dist', 'C:\\Users\\korbe\\AppData\\Local\\Temp\\_MEI71282\\base_library.zip', 'C:\\Users\\korbe\\AppData\\Local\\Temp\\_MEI71282\\lib-dynload', 'C:\\Users\\korbe\\AppData\\Local\\Temp\\_MEI71282', 'C:\\Users\\korbe\\AppData\\Local\\Temp\\_MEI71282\\win32', 'C:\\Users\\korbe\\AppData\\Local\\Temp\\_MEI71282\\pywin32_system32']
+2025-05-14 15:11:57,927 - INFO - root - main:45 - Is frozen (bundled): True
+2025-05-14 15:11:57,928 - INFO - root - main:47 - sys._MEIPASS: C:\Users\korbe\AppData\Local\Temp\_MEI71282
+2025-05-14 15:11:57,928 - INFO - root - main:51 - Attempting to import FinalDestinationApp from fd_terminal.main
+2025-05-14 15:11:57,955 - INFO - kivy - __init__:512 - Kivy: v2.3.1
+2025-05-14 15:11:57,957 - INFO - kivy - logger:284 - Logger: Record log in C:\Users\korbe\.kivy\logs\kivy_25-05-14_26.txt
+2025-05-14 15:11:57,957 - INFO - kivy - __init__:513 - Kivy: Installed at "C:\Users\korbe\AppData\Local\Temp\_MEI71282\kivy\__init__.pyc"
+2025-05-14 15:11:57,958 - INFO - kivy - __init__:514 - Python: v3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]
+2025-05-14 15:11:57,958 - INFO - kivy - __init__:515 - Python: Interpreter at "C:\Users\korbe\OneDrive\Documents\GitHub\FD_Terminal_Game\dist\main.exe"
+2025-05-14 15:11:57,959 - INFO - kivy - logger:232 - Logger: Purge log fired. Processing...
+2025-05-14 15:11:57,970 - INFO - kivy - logger:249 - Logger: Purge finished!
+2025-05-14 15:11:58,055 - INFO - kivy - factory:186 - Factory: 195 symbols loaded
+2025-05-14 15:11:58,188 - INFO - kivy - __init__:145 - Image: Providers: img_tex, img_dds, img_sdl2 (img_pil, img_ffpyplayer ignored)
+2025-05-14 15:11:58,234 - INFO - kivy - __init__:67 - Text: Provider: sdl2
+2025-05-14 15:11:58,271 - INFO - kivy - __init__:67 - Window: Provider: sdl2
+2025-05-14 15:11:58,448 - INFO - kivy - __init__:45 - GL: Using the "OpenGL" graphics system
+2025-05-14 15:11:58,450 - INFO - kivy - __init__:45 - GL: GLEW initialization succeeded
+2025-05-14 15:11:58,450 - INFO - kivy - __init__:51 - GL: Backend used <glew>
+2025-05-14 15:11:58,452 - INFO - kivy - __init__:55 - GL: OpenGL version <b'4.3.0 - Build 10.18.15.4248'>
+2025-05-14 15:11:58,455 - INFO - kivy - __init__:56 - GL: OpenGL vendor <b'Intel'>
+2025-05-14 15:11:58,457 - INFO - kivy - __init__:57 - GL: OpenGL renderer <b'Intel(R) HD Graphics 4600'>
+2025-05-14 15:11:58,458 - INFO - kivy - __init__:61 - GL: OpenGL parsed version: 4, 3
+2025-05-14 15:11:58,460 - INFO - kivy - __init__:81 - GL: Shading version <b'4.30 - Build 10.18.15.4248'>
+2025-05-14 15:11:58,462 - INFO - kivy - __init__:83 - GL: Texture max size <16384>
+2025-05-14 15:11:58,464 - INFO - kivy - __init__:85 - GL: Texture max units <32>
+2025-05-14 15:11:58,519 - INFO - kivy - window_sdl2:369 - Window: auto add sdl2 input provider
+2025-05-14 15:11:58,525 - INFO - kivy - __init__:2308 - Window: virtual keyboard not allowed, single mode, not docked
+2025-05-14 15:11:58,549 - INFO - root - main:54 - Import successful.
