@@ -6,13 +6,13 @@ Welcome to **Final Destination Terminal**, a text-based adventure game with a Ki
 
 ## Game Premise
 
-You are a survivor of a recent mass-casualty event. Haunted by the premonition that saved your life, you now find yourself on Death's List simply because you listened and avoided your original fate. The game begins as you accompany the body of the most recent ex-survivor to a place deeply connected with the mysteries of Death – the unsettling Hope River Hospital, and perhaps even the infamous William Bludworth's residence
-Your goal is to explore these cursed locations, gather evidence related to past events and victims, and understand the intricate patterns of Death's design, all while trying to stay one step ahead of your own grim fate.
+You are a survivor of a recent mass-casualty event. Haunted by the premonition that saved your life, you now find yourself on Death's List simply because you listened and avoided your original fate. The game begins as you accompany the body of the most recent (ex)survivor to a place deeply connected with the mysteries of Death – the unsettling Hope River Hospital, and perhaps even the infamous William Bludworth's now abandoned residence.
+Your goal is to explore these locations, gather evidence related to past events and victims, and understand the intricate patterns of Death's design, all while trying to stay one step ahead of your own grim fate.
 
 ## Key Features
 
 * **Dynamic Hazard System:** Experience a world where the environment itself is your enemy. Hazards can activate, change states, interact with each other, and react to your actions, creating emergent and dangerous situations.
-* **Multiple Levels:** Explore distinct, multi-room locations, each with unique items, evidence, and deadly hazards (e.g., Lakeview Hospital, The Bludworth House).
+* **Multiple Levels:** Explore distinct, multi-room locations, each with unique items, evidence, and deadly hazards (e.g., Hope River Hospital, The Bludworth House).
 * **Rich Lore & Evidence Collection:** Discover numerous evidence items tied to victims from the Final Destination movies and expanded universe, each with descriptions and potential clues.
 * **Character Classes:** Choose from different character archetypes, each with minor statistical differences (HP, Perception, Intuition) influencing gameplay.
 * **Interactive Storytelling:** A randomly generated introductory disaster sets the stage for your game session.
@@ -84,7 +84,7 @@ Your goal is to explore these cursed locations, gather evidence related to past 
 Before starting a new game, you can select a character class. Each class has slightly different starting HP, Perception (affecting finding hidden things), and Intuition (affecting hazard warnings or sensing danger).
 
 ### Levels & Progression
-The game is divided into levels, each with a unique setting (e.g., Lakeview Hospital, Bludworth House). To complete a level and progress, you typically need to find specific pieces of evidence and reach the designated exit. An Inter-Level screen summarizes your performance before you proceed.
+The game is divided into levels, each with a unique setting (e.g., Hope River Hospital, Bludworth House). To complete a level and progress, you typically need to find specific pieces of evidence and reach the designated exit. An Inter-Level screen summarizes your performance before you proceed.
 
 ### Hazards & Environment
 The environment is highly dynamic and dangerous:
@@ -116,7 +116,8 @@ The game is designed to be data-driven:
 
 Based on the "Final Destination" film, book and comic series
 
-Developed with love by: [KorbenD3P0] people associated with the IP officially, this was just a hobby project made to be informative for people interested in the lesser known, wider "FDU"
+Developed with love by: [KorbenD3P0] 
+To people associated with the IP officially: I hope this is okay; this was just a hobby project made to be informative for people interested in the lesser known, wider "FDU"
 
 This game would not have been possible without TheInnsersect
 (Hi, Mom!)
@@ -134,6 +135,6 @@ Enjoy your brush with Death, and try not to end up on its list permanently. Good
 ## Version History
 
 v1.0.0 - Initial release
-- Two complete levels: The Bludworth House and Lakeview Hospital
+- Two complete levels: The Bludworth House and Hope River Hospital
 - Achievement system
 - Save/Load functionality
