@@ -1,11 +1,73 @@
 # FD_Terminal_Game/main.py (Launcher Script)
 import sys
 import os
+from kivy.config import Config
+Config.set('input', 'mouse', 'mouse,disable_multitouch')
+Config.set('input', 'wm_touch', '') # May also help disable simulated touch events from window manager
+Config.set('input', 'wm_pen', '')   # Disable pen events if not needed
+
 import logging
 import pprint # Add this for readable printing
 import shutil
 import json
 from kivy.uix.label import Label
+
+def fix_corrupted_save_files():
+    """Locate and handle corrupted save files at startup"""
+    import os
+    import json
+    import logging
+    
+    print("Checking for corrupted save files...")
+    save_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'saves')
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir, exist_ok=True)
+        return
+    
+    files_checked = 0
+    corrupted_found = 0
+    
+    for filename in os.listdir(save_dir):
+        if not filename.startswith('savegame_') or not filename.endswith('.json'):
+            continue
+            
+        # Special handling for files with {} in the name (malformed placeholders)
+        if "{}" in filename:
+            print(f"Found improperly named save file: {filename}")
+            corrupted_path = os.path.join(save_dir, filename)
+            try:
+                os.remove(corrupted_path)
+                print(f"Deleted improperly named save file: {filename}")
+                corrupted_found += 1
+                continue
+            except Exception as e:
+                print(f"Error removing file {filename}: {e}")
+        
+        files_checked += 1
+        filepath = os.path.join(save_dir, filename)
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                content = f.read()
+                if not content.strip():
+                    continue  # Skip empty files
+                json.loads(content)  # Test if valid JSON
+        except json.JSONDecodeError as e:
+            corrupted_found += 1
+            print(f"Found corrupted save file: {filename} (Error at position {e.pos})")
+            # Rename corrupted file
+            corrupted_path = filepath + ".corrupted"
+            try:
+                if os.path.exists(corrupted_path):
+                    os.remove(corrupted_path)
+                os.rename(filepath, corrupted_path)
+                print(f"Renamed to {filename}.corrupted")
+            except Exception as rename_err:
+                print(f"Error handling corrupt file: {rename_err}")
+    
+    print(f"Save file check complete. Processed {files_checked} files, found {corrupted_found} corrupted.")
+    
+# Call this function before app.run()
+fix_corrupted_save_files()
 
 print(f"--- Executing root main.py: {__file__} ---")
 print(f"Initial os.getcwd(): {os.getcwd()}")
@@ -44,6 +106,27 @@ if hasattr(sys, '_MEIPASS'):
         os.path.join(sys._MEIPASS, 'fd_terminal', 'data'),
         os.path.join(sys._MEIPASS, 'fd_terminal', 'assets')
     ])
+
+def get_resource_path(relative_path):
+    """Get absolute path to resource, works for dev and PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+        
+    # Try both the direct path and fd_terminal-prefixed path
+    paths_to_try = [
+        os.path.join(base_path, relative_path),
+        os.path.join(base_path, "fd_terminal", relative_path)
+    ]
+    
+    for path in paths_to_try:
+        if os.path.exists(path):
+            return path
+            
+    # Default to the first path if nothing exists
+    return paths_to_try[0]
 
 # Function to recursively search for room data files
 def find_room_data_files(base_path, max_depth=3, current_depth=0):

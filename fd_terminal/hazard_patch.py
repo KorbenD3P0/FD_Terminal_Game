@@ -120,7 +120,7 @@ NEW_HAZARDS = {
 
 # Define new items to be added or to update existing ones
 NEW_ITEMS = {
-    "fire_extinguisher": {
+    "fire extinguisher": {
         "description": "A standard red fire extinguisher. Could be very useful against flames.",
         "takeable": True,
         "weight": 3, 
@@ -130,7 +130,7 @@ NEW_ITEMS = {
         "examine_details": "It's fully charged. Instructions: Pull pin, Aim at base of fire, Squeeze lever, Sweep side to side."
         # The actual effect of using it is defined in the HAZARD's player_interaction rules.
     },
-    "rubber_gloves": { # Example item for faulty_wiring_interactive
+    "rubber gloves": { # Example item for faulty_wiring_interactive
         "description": "Thick, insulated rubber gloves. Might offer protection from electricity.",
         "takeable": True,
         "weight": 0.5,
@@ -138,10 +138,13 @@ NEW_ITEMS = {
         "use_on": ["faulty_wiring_interactive"], # Can be used on this specific hazard
         "examine_details": "Rated for up to 1000 volts. Or so the faded label claims."
     },
-    "water_container_full": { # Example for dousing electrical fire (bad idea)
-        "description": "A plastic bottle sloshing with water.",
+    "cup of water": { # Example for dousing electrical fire (bad idea)
+        "description": "A plastic Individual cup sloshing with water.",
         "takeable": True,
         "weight": 1,
+        "is_liquid": True, # Indicates it's a liquid container
+        "is_spillable": True, # Can spill if dropped
+        "is_conductive": True, # Water is conductive
         "type": "water_container", # Specific type
         "use_on": ["electrical_fire", "thirsty_plant"], # Example targets
         "examine_details": "It's just plain water."

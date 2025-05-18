@@ -1,13 +1,13 @@
-import json # Not strictly used in this section, but often present
+import json 
 import random
 import logging
 import copy
-import os # Not strictly used in this section
-import datetime # Not strictly used in this section
+import os 
+import datetime 
 import collections
-from .utils import color_text # Assuming utils.py is in the same package
-from kivy.app import App # Not strictly used in this section
-from . import game_data # Assuming game_data.py is in the same package
+from .utils import color_text 
+from kivy.app import App 
+from . import game_data 
 
 # ==================================
 # Hazard Engine Class
@@ -37,6 +37,7 @@ class HazardEngine:
         self.processed_hazards_this_turn = set()
         
         logging.info("HazardEngine initialized.")
+        self.logger = logging.getLogger(__name__) 
 
     @property
     def player(self):
@@ -197,14 +198,28 @@ class HazardEngine:
         )
     
     def _add_active_hazard(self, hazard_type, location, 
-                           initial_state_override=None,
-                           target_object_override=None, 
-                           support_object_override=None,
-                           source_trigger_id=None,
-                           default_placement_options=None):
+                       initial_state_override=None,
+                       target_object_override=None, 
+                       support_object_override=None,
+                       source_trigger_id=None,
+                       default_placement_options=None):
         """
         Adds an instance of a specified hazard type to the game world.
-        (Continuation of the method from previous context)
+
+        Args:
+            hazard_type (str): The key of the hazard in self.hazards_master_data.
+            location (str): The room name where the hazard is located.
+            initial_state_override (str, optional): Specific state to start in, overrides definition.
+            target_object_override (str, optional): Specific name for this instance (e.g., "the sparking console").
+                                                    Overrides random choice from object_name_options.
+            support_object_override (str, optional): Specific support object (e.g., "on the workbench").
+                                                    Overrides dynamic selection.
+            source_trigger_id (str, optional): ID of another hazard that triggered this one.
+            default_placement_options (list, optional): Not currently used directly here, but was part of _process_hazard_entry.
+                                                    Support object selection is now more self-contained.
+
+        Returns:
+            str or None: The ID of the newly created hazard instance, or None if creation failed.
         """
         if hazard_type not in self.hazards_master_data:
             logging.warning(f"HazardEngine: Attempted to add unknown hazard type: {hazard_type}")
@@ -213,14 +228,21 @@ class HazardEngine:
         hazard_id = self._generate_hazard_id()
         base_definition = self.hazards_master_data[hazard_type]
 
+        # Determine actual object name for this instance
         final_object_name = target_object_override
         if not final_object_name:
             options = base_definition.get("object_name_options", [base_definition.get("name", hazard_type).lower().replace(" ", "_")])
             final_object_name = random.choice(options) if options else base_definition.get("name", hazard_type)
 
+        # Determine support object (where it's located, e.g., "on the table")
         final_support_object = support_object_override
         if not final_support_object:
+            # Logic to pick a support object if not overridden:
+            # 1. Check 'placement_object' in hazard definition (list of preferred support types like "desk", "wall")
+            # 2. See if any of those are present in the room's furniture or objects.
+            # 3. Fallback if necessary.
             room_data_for_placement = self.rooms.get(location, {})
+            
             all_potential_supports_in_room = []
             if room_data_for_placement and isinstance(room_data_for_placement, dict):
                 room_furniture_names = [f.get("name") for f in room_data_for_placement.get("furniture", []) if isinstance(f, dict) and f.get("name")]
@@ -237,459 +259,51 @@ class HazardEngine:
             else:
                 final_support_object = "an indeterminate spot" 
         
-        final_initial_state = initial_state_override or base_definition.get('initial_state')
+        # Determine initial state
+        final_initial_state = initial_state_override
+        if not final_initial_state:  # If no override, use definition's initial_state
+            final_initial_state = base_definition.get('initial_state')
         
+        # Validate the chosen initial state
         if not final_initial_state or final_initial_state not in base_definition.get('states', {}):
+            # If still no valid state, try to pick the first defined state as a fallback
             if base_definition.get('states'):
                 try:
                     first_defined_state = list(base_definition['states'].keys())[0]
-                    logging.warning(f"HazardEngine: Invalid or missing initial state for {hazard_type}. Using first state: '{first_defined_state}'.")
+                    if not final_initial_state:  # If it was None from definition
+                        logging.warning(f"HazardEngine: Hazard type {hazard_type} has no 'initial_state' defined. Using first state: '{first_defined_state}'.")
+                    else:  # If override was invalid
+                        logging.warning(f"HazardEngine: Provided initial_state_override '{initial_state_override}' for {hazard_type} is invalid. Using first state: '{first_defined_state}'.")
                     final_initial_state = first_defined_state
                 except (IndexError, TypeError):
                     logging.error(f"HazardEngine: Hazard type {hazard_type} has no states defined. Cannot add hazard.")
                     return None
-            else:
+            else:  # No states defined at all
                 logging.error(f"HazardEngine: Hazard type {hazard_type} has no states defined. Cannot add hazard.")
                 return None
 
         new_hazard_instance = {
-            "id": hazard_id, "type": hazard_type, "name": base_definition.get("name", hazard_type),
-            "object_name": final_object_name, "support_object": final_support_object,
-            "location": location, "state": final_initial_state,
-            "data": copy.deepcopy(base_definition), "turns_in_state": 0,
-            "aggression": base_definition.get("initial_aggression", 0),
+            "id": hazard_id,
+            "type": hazard_type,
+            "name": base_definition.get("name", hazard_type),  # User-friendly name from definition
+            "object_name": final_object_name,        # Specific instance name, e.g., "the sparking console"
+            "support_object": final_support_object,  # Where it is, e.g., "on the workbench"
+            "location": location,
+            "state": final_initial_state,
+            "data": copy.deepcopy(base_definition),  # Full master definition for reference during runtime
+            "turns_in_state": 0,
+            "aggression": base_definition.get("initial_aggression", 0),  # Can be set in master def
             "triggered_by_hazard_id": source_trigger_id,
         }
+        
         self.active_hazards[hazard_id] = new_hazard_instance
         logging.info(f"HazardEngine: Added active hazard ID {hazard_id}, Type '{hazard_type}' (as '{final_object_name}' on/near '{final_support_object}'), Location '{location}', Initial State '{final_initial_state}'.")
+        
+        # Apply its initial environmental effect immediately after adding
+        # This will be called by update_environmental_states instead of directly
+        # If a hazard is added mid-game, update_environmental_states should be called.
+        
         return hazard_id
-
-    def _set_hazard_state(self, hazard_id, new_state_name, messages_list):
-        """
-        Sets a hazard to a new state, applies effects, and handles consequences.
-        (Continuation of the method from previous context)
-        """
-        hazard = self.active_hazards.get(hazard_id)
-        if not hazard:
-            logging.warning(f"HazardEngine: Hazard ID {hazard_id} not found for state change.")
-            return False
-
-        hazard_def_states = hazard['data'].get('states', {})
-        old_state_name = hazard['state']
-
-        if new_state_name is None:
-            logging.info(f"HazardEngine: Removing hazard {hazard_id} ('{hazard['type']}') from {hazard['location']}.")
-            del self.active_hazards[hazard_id]
-            self.update_environmental_states()
-            removal_message = hazard['data'].get("removal_message", f"The {hazard.get('object_name', hazard['type'])} is no longer an issue.")
-            messages_list.append(color_text(removal_message, "success"))
-            return True
-
-        if new_state_name not in hazard_def_states:
-            logging.warning(f"HazardEngine: Invalid state '{new_state_name}' for hazard {hazard_id}. Valid: {list(hazard_def_states.keys())}")
-            return False
-
-        if old_state_name == new_state_name: return True
-
-        logging.info(f"HazardEngine: Hazard {hazard_id} ('{hazard['type']}') state: '{old_state_name}' -> '{new_state_name}'.")
-        hazard['state'] = new_state_name
-        hazard['turns_in_state'] = 0
-        new_state_definition = hazard_def_states[new_state_name]
-        self.update_environmental_states()
-
-        desc_template = new_state_definition.get('description')
-        if desc_template:
-            try:
-                formatted_desc = desc_template.format(
-                    object_name=color_text(hazard.get('object_name', hazard['name']), 'hazard'),
-                    support_object=color_text(hazard.get('support_object', 'its surroundings'), 'room')
-                )
-                messages_list.append(formatted_desc)
-            except KeyError as e:
-                logging.error(f"HazardEngine: KeyError in description for {hazard['type']}/{new_state_name}: {e}. Template: '{desc_template}'")
-                messages_list.append(color_text(f"The {hazard.get('object_name', hazard['name'])} changes.", "warning"))
-
-        player_is_present = self.player.get('location') == hazard['location']
-        if player_is_present and not self.game_logic.is_game_over:
-            hp_damage_on_state_change = new_state_definition.get("instant_hp_damage", 0)
-            if hp_damage_on_state_change > 0:
-                damage_source_name = hazard.get('object_name', hazard['name'])
-                self.game_logic.apply_damage_to_player(hp_damage_on_state_change, f"effect from {damage_source_name}")
-                messages_list.append(color_text(f"You take {hp_damage_on_state_change} damage from the {damage_source_name}!", "error"))
-
-            status_effect_def = new_state_definition.get("status_effect_on_state_change")
-            if status_effect_def and isinstance(status_effect_def, dict) and not self.game_logic.is_game_over:
-                status_name = status_effect_def.get("name")
-                status_duration = status_effect_def.get("duration")
-                if status_name:
-                    self.game_logic.apply_status_effect(status_name, status_duration, messages_list)
-
-            if new_state_definition.get('instant_death_in_room') and not self.game_logic.is_game_over:
-                death_msg_template = new_state_definition.get('death_message', f"The {hazard.get('object_name', hazard['name'])} escalates fatally!")
-                messages_list.append(color_text(death_msg_template.format(object_name=hazard.get('object_name', 'area')), "error"))
-                self.game_logic.is_game_over = True; self.game_logic.game_won = False
-                self.player['last_hazard_type'] = hazard['type']; self.player['last_hazard_object_name'] = hazard.get('object_name', hazard['name'])
-                logging.info(f"HazardEngine: Instant death by hazard {hazard_id} state '{new_state_name}'.")
-                return True
-
-        # --- New section for sets_room_on_fire ---
-        # This should be after player effects for the current hazard state change are processed,
-        # but before returning, as it might generate more messages or even end the game.
-        if new_state_definition.get('sets_room_on_fire') and not self.game_logic.is_game_over:
-            room_of_fire_hazard = hazard['location']
-            # Check if a 'spreading_fire' hazard already exists in this room
-            existing_room_fire_id = None
-            for active_h_id, active_h_instance in self.active_hazards.items():
-                if active_h_instance.get('type') == self.game_logic.game_data.HAZARD_TYPE_SPREADING_FIRE and \
-                   active_h_instance.get('location') == room_of_fire_hazard:
-                    existing_room_fire_id = active_h_id
-                    break
-            
-            if not existing_room_fire_id:
-                messages_list.append(color_text(f"The {hazard.get('object_name', 'fire from ' + hazard['type'])} ignites the surroundings in {room_of_fire_hazard}!", "error"))
-                # Add a new 'spreading_fire' hazard
-                self._add_active_hazard(
-                    hazard_type=self.game_logic.game_data.HAZARD_TYPE_SPREADING_FIRE,
-                    location=room_of_fire_hazard,
-                    initial_state_override="burning_low", # Or determine from intensity of source
-                    target_object_override=f"fire spreading from {hazard.get('object_name', hazard['type'])}", # Descriptive
-                    support_object_override="the room itself"
-                )
-                # The new spreading_fire hazard will have its own environmental effects applied
-                # during the next full update_environmental_states or if explicitly triggered.
-            else:
-                # A spreading_fire already exists. Optionally, escalate its state.
-                existing_fire_hazard = self.active_hazards.get(existing_room_fire_id)
-                if existing_fire_hazard and existing_fire_hazard['state'] == "burning_low":
-                    messages_list.append(color_text(f"The additional flames from {hazard.get('object_name', hazard['type'])} cause the fire in {room_of_fire_hazard} to intensify!", "error"))
-                    self._set_hazard_state(existing_room_fire_id, "burning_high", messages_list)
-            
-            # After adding/modifying spreading_fire, the room's env state 'is_on_fire' should become True.
-            # This is handled by update_environmental_states(), which is called after this _set_hazard_state in some flows.
-            # Or, we can directly update the room_env here for immediate effect before full recalc.
-            if room_of_fire_hazard in self.room_env:
-                self.room_env[room_of_fire_hazard]['is_on_fire'] = True
-                logging.info(f"HazardEngine: Room '{room_of_fire_hazard}' env directly set to is_on_fire=True due to '{hazard['type']}'.")
-            
-            # Potentially check for immediate gas explosion if gas is present
-            self._check_global_environmental_reactions(messages_list) # This might trigger game over
-
-            # If game ended due to direct effects or subsequent explosion, return
-            if self.game_logic.is_game_over:
-                return True
-            
-            # Trigger chained hazards if defined for the new state
-            # (This might be a separate method call if complex)
-            if new_state_definition.get("triggers_hazard_on_state_change") and isinstance(new_state_definition["triggers_hazard_on_state_change"], list):
-                for trigger_rule in new_state_definition["triggers_hazard_on_state_change"]:
-                    if not isinstance(trigger_rule, dict): continue
-
-                    chance = trigger_rule.get("chance", 1.0)
-                    # Add aggression influence on chance if defined
-                    agg_influence = trigger_rule.get("aggression_influence_on_chance", 0.0)
-                    current_aggression = hazard.get("aggression", self._calculate_aggression_factor())
-                    chance += agg_influence * current_aggression
-                    chance = min(1.0, max(0.0, chance))
-
-                    if random.random() < chance:
-                        condition_met = True # Assume true unless specific conditions fail
-                        if trigger_rule.get("condition") == "player_in_room" and not player_is_present:
-                            condition_met = False
-                        # Add more specific condition checks here if needed, e.g., based on hazard.get('object_name')
-
-                        if condition_met:
-                            new_hazard_type = trigger_rule.get("type")
-                            if new_hazard_type:
-                                logging.info(f"HazardEngine: Hazard {hazard_id} ('{hazard['type']}') in state '{new_state_name}' triggering new hazard '{new_hazard_type}'.")
-                                
-                                # Prepare message for triggered hazard
-                                trigger_message_template = trigger_rule.get("trigger_message")
-                                if trigger_message_template:
-                                    messages_list.append(color_text(trigger_message_template.format(
-                                        source_name=hazard.get('object_name', hazard['name']),
-                                        # Add other placeholders if your messages use them
-                                    ), "warning"))
-                                
-                                self._add_active_hazard(
-                                    hazard_type=new_hazard_type,
-                                    location=hazard['location'], # Usually same location
-                                    initial_state_override=trigger_rule.get("initial_state"),
-                                    target_object_override=trigger_rule.get("target_object", trigger_rule.get("object_name_override")), # Use specific name if provided
-                                    support_object_override=trigger_rule.get("support_object_override"),
-                                    source_trigger_id=hazard_id
-                                )
-                                # Environmental states will be updated, and global reactions checked again if necessary
-                                # after all hazards for the turn, or explicitly if needed.
-                                self.update_environmental_states() 
-                                self._check_global_environmental_reactions(messages_list) # Check again if a new hazard might interact
-                                if self.game_logic.is_game_over: return True
-            
-            return True # State change successful
-
-
-    def _mri_pull_through_window(self, hazard_id, hazard_instance, state_data, messages_list):
-        """
-        Handles the MRI pulling objects through the observation window,
-        targeting the player if they are in the MRI Control Room.
-        Triggers a QTE.
-        """
-        if self.game_logic.is_game_over:
-            return
-
-        # This hazard is in the MRI Scan Room, but its effect targets the MRI Control Room.
-        # Room names are defined as constants in game_data.py
-        mri_control_room_name = "MRI Control Room" # Assuming this is the exact name from game_data.rooms
-
-        player_location = self.player.get('location')
-
-        if player_location != mri_control_room_name:
-            # Player is not in the control room, so they are not directly targeted by this specific action.
-            # The hazard might still progress its state or have other environmental effects.
-            messages_list.append(color_text(f"From the {mri_control_room_name}, you hear a tremendous crash and the sound of shattering glass as the {hazard_instance.get('object_name', 'MRI')} malfunctions further!", "warning"))
-            # Progress the hazard to its next state as defined in game_data
-            next_state_after_pull = state_data.get("next_state_on_qte_resolved") # Or a generic next_state if no QTE was meant for others
-            if next_state_after_pull:
-                self._set_hazard_state(hazard_id, next_state_after_pull, messages_list)
-            return
-
-        # Player IS in the MRI Control Room
-        object_pulled_desc = state_data.get("object_type_pulled", "metallic debris")
-        qte_type = state_data.get("qte_type_to_trigger", game_data.QTE_TYPE_DODGE_PROJECTILE) #
-        qte_duration = state_data.get("qte_duration", 3.0)
-        damage_on_fail = state_data.get("damage_on_qte_fail", 5)
-        is_fatal_on_fail = state_data.get("fatal_on_qte_fail", False)
-        next_state = state_data.get("next_state_on_qte_resolved", "mri_field_collapsed") # Default next state after sequence
-
-        # Formulate the QTE prompt message
-        qte_prompt_message = (
-            f"The observation window explodes inwards! {object_pulled_desc.capitalize()} "
-            f"erupts from the MRI Scan Room, flying straight at you!\n"
-            f"Type \"{self.game_logic.game_data.QTE_RESPONSE_DODGE.upper()}\" to dodge! ({qte_duration}s)"
-        )
-        messages_list.append(color_text(qte_prompt_message, "hazard"))
-
-        # Trigger QTE via GameLogic
-        # GameLogic will handle the actual timer and response processing.
-        # The HazardEngine sets up the parameters for the QTE.
-        qte_context_for_game_logic = {
-            "success_message": f"You narrowly DODGE the incoming {object_pulled_desc}!",
-            "failure_message": f"The {object_pulled_desc} slams into you with brutal force!",
-            "hp_damage_on_failure": damage_on_fail,
-            "is_fatal_on_failure": is_fatal_on_fail,
-            "on_success_hazard_id_to_progress": hazard_id, # For HazardEngine to know which hazard to update after QTE
-            "on_failure_hazard_id_to_progress": hazard_id,
-            "next_state_for_hazard": next_state,
-            "qte_source_hazard_id": hazard_id, # Identify the hazard triggering it
-            "qte_source_hazard_state": hazard_instance['state'] # Current state that triggered
-        }
-
-        if self.game_logic and hasattr(self.game_logic, 'trigger_qte'):
-            self.game_logic.trigger_qte(qte_type, qte_duration, qte_context_for_game_logic)
-        else:
-            logging.error("HazardEngine: GameLogic reference or trigger_qte method not found!")
-            # Fallback: if no QTE, assume failure for this dangerous event
-            messages_list.append(color_text(f"The {object_pulled_desc} hits you as the system couldn't initiate a dodge sequence!", "error"))
-            if is_fatal_on_fail:
-                self.game_logic.apply_damage_to_player(999, f"undodged {object_pulled_desc} from MRI") # Ensure death
-            else:
-                self.game_logic.apply_damage_to_player(damage_on_fail, f"hit by {object_pulled_desc} from MRI")
-            if hazard_id in self.active_hazards: # Check if hazard still exists
-                 self._set_hazard_state(hazard_id, next_state, messages_list)
-   
-    def hazard_turn_update(self):
-        """
-        Processes all active hazards for the current game turn.
-        Handles temporary effects, hazard progression, spreading fire, and global reactions.
-        """
-        messages = []
-        agg_factor = self._calculate_aggression_factor()
-        logging.debug(f"HazardEngine: --- Hazard Turn Update Start --- Aggression Factor: {agg_factor:.2f}")
-
-        # --- Process Temporary Room Effects ---
-        effects_to_remove_indices = []
-        environment_changed_by_temp_effects = False
-        for i, effect in enumerate(self.temporary_room_effects):
-            effect['turns_left'] -= 1
-            if effect['turns_left'] <= 0:
-                effects_to_remove_indices.append(i)
-                # Revert the effect
-                if effect['room'] in self.room_env:
-                    self.room_env[effect['room']][effect['key']] = effect['original_value']
-                    environment_changed_by_temp_effects = True
-                    logging.info(f"HazardEngine: Temporary effect expired in '{effect['room']}': '{effect['key']}' reverted to '{effect['original_value']}'.")
-                    if effect['key'] == 'visibility' and effect['temp_value'] != effect['original_value']:
-                        messages.append(color_text(f"The {effect['key']} in {effect['room']} returns to normal.", "info"))
-        for i in sorted(effects_to_remove_indices, reverse=True):
-            self.temporary_room_effects.pop(i)
-        if environment_changed_by_temp_effects:
-            self.update_environmental_states()
-
-        self.processed_hazards_this_turn.clear()
-        active_hazard_ids_this_cycle = list(self.active_hazards.keys())
-
-        for hazard_id in active_hazard_ids_this_cycle:
-            if self.game_logic.is_game_over: break
-            if hazard_id in self.processed_hazards_this_turn: continue
-            if hazard_id not in self.active_hazards: continue
-
-            hazard = self.active_hazards[hazard_id]
-            hazard['turns_in_state'] += 1
-
-            hazard_aggression_increase = hazard['data'].get('aggression_per_turn_increase', 0.0)
-            max_hazard_aggression = hazard['data'].get('max_aggression', 5.0)
-            hazard['aggression'] = min(hazard.get('aggression', 0) + hazard_aggression_increase, max_hazard_aggression)
-
-            current_state_name = hazard["state"]
-            state_data = hazard["data"]["states"].get(current_state_name)
-            if not state_data:
-                logging.warning(f"HazardEngine: Hazard {hazard_id} ('{hazard['type']}') in unknown state '{current_state_name}'. Skipping update.")
-                continue
-
-            player_is_present = self.player.get('location') == hazard['location']
-
-            # QTE pause logic for hazards awaiting QTE resolution
-            is_this_hazard_awaiting_qte_resolution = (
-                self.game_logic.player.get('qte_active') and
-                self.game_logic.player.get('qte_context', {}).get('qte_source_hazard_id') == hazard_id and
-                state_data.get('autonomous_action') == "_mri_pull_through_window"
-            )
-            if is_this_hazard_awaiting_qte_resolution:
-                logging.debug(f"Hazard {hazard_id} is awaiting QTE resolution for state '{current_state_name}'. Skipping its autonomous action and progression this turn.")
-                self.processed_hazards_this_turn.add(hazard_id)
-                continue
-
-            # Per-turn room effects
-            if player_is_present and not self.game_logic.is_game_over:
-                self._apply_per_turn_room_effects(hazard_id, hazard, state_data, messages)
-                if self.game_logic.is_game_over: break
-
-            # Autonomous actions
-            autonomous_action_key = state_data.get('autonomous_action')
-            if autonomous_action_key and not self.game_logic.is_game_over:
-                can_run_globally = state_data.get("global_autonomous_action", False)
-                if player_is_present or can_run_globally:
-                    action_method = getattr(self, f"_{autonomous_action_key}", None)
-                    if action_method and callable(action_method):
-                        logging.debug(f"HazardEngine: Executing autonomous action '{autonomous_action_key}' for hazard {hazard_id}.")
-                        action_method(hazard_id, hazard, state_data, messages)
-                    else:
-                        logging.warning(f"HazardEngine: Unknown autonomous_action_key or non-callable method: '{autonomous_action_key}' for hazard {hazard_id}")
-                    if self.game_logic.is_game_over: break
-
-            # State progression (if not paused by QTE)
-            if not self.game_logic.player.get('qte_active') or \
-            self.game_logic.player.get('qte_context', {}).get('qte_source_hazard_id') != hazard_id:
-
-                # Progress state
-                if "chance_to_progress" in state_data and "next_state" in state_data and not self.game_logic.is_game_over:
-                    base_chance = state_data["chance_to_progress"]
-                    aggro_boost_def = state_data.get("aggression_influence", {}).get("chance_to_progress_boost", 0.0)
-                    current_aggression = hazard.get("aggression", agg_factor)
-                    aggro_boost_val = aggro_boost_def * current_aggression
-                    actual_chance = min(1.0, max(0.0, base_chance + aggro_boost_val))
-                    if random.random() < actual_chance:
-                        logging.debug(f"HazardEngine: Hazard {hazard_id} progressing state due to chance ({actual_chance:.2f}).")
-                        self._set_hazard_state(hazard_id, state_data["next_state"], messages)
-                        if self.game_logic.is_game_over: break
-                        if hazard_id in self.active_hazards:
-                            current_state_name = self.active_hazards[hazard_id]["state"]
-                            state_data = self.active_hazards[hazard_id]["data"]["states"].get(current_state_name)
-                            if not state_data: continue
-                        else: continue
-
-                # Revert state
-                if "chance_to_revert" in state_data and "revert_state" in state_data and not self.game_logic.is_game_over:
-                    base_revert_chance = state_data.get("chance_to_revert", 0.05)
-                    revert_agg_multiplier = state_data.get("aggression_influence", {}).get("revert_chance_multiplier", 1.0)
-                    current_aggression = hazard.get("aggression", agg_factor)
-                    effective_revert_chance = base_revert_chance * revert_agg_multiplier
-                    if random.random() < effective_revert_chance:
-                        revert_msg_template = state_data.get("revert_message", "The {object_name} seems to calm down a bit.")
-                        messages.append(color_text(revert_msg_template.format(object_name=hazard.get('object_name', hazard['type'])), "info"))
-                        self._set_hazard_state(hazard_id, state_data["revert_state"], messages)
-                        if self.game_logic.is_game_over: break
-                        if hazard_id in self.active_hazards:
-                            current_state_name = self.active_hazards[hazard_id]["state"]
-                            state_data = self.active_hazards[hazard_id]["data"]["states"].get(current_state_name)
-                            if not state_data: continue
-                        else: continue
-
-            # Hazard-to-hazard interactions
-            if "hazard_interaction" in state_data and isinstance(state_data["hazard_interaction"], dict) and not self.game_logic.is_game_over:
-                self._handle_hazard_to_hazard_interactions(hazard, state_data["hazard_interaction"], agg_factor, messages)
-                if self.game_logic.is_game_over: break
-                if hazard_id in self.active_hazards:
-                    current_state_name = self.active_hazards[hazard_id]["state"]
-                    state_data = self.active_hazards[hazard_id]["data"]["states"].get(current_state_name)
-                    if not state_data: continue
-                else: continue
-
-            # Decay logic
-            decay_info = state_data.get("autonomous_decay")
-            if not decay_info and hazard['type'] == self.game_logic.game_data.HAZARD_TYPE_SPREADING_FIRE:
-                decay_info = state_data.get("autonomous_decay_to_burnt_out")
-            if decay_info and isinstance(decay_info, dict) and not self.game_logic.is_game_over:
-                decay_chance = decay_info.get("chance", 0.05)
-                if random.random() < decay_chance:
-                    decay_target_state = decay_info.get("target_state")
-                    decay_message_template = decay_info.get("message", "The {object_name} seems to be diminishing.")
-                    messages.append(color_text(decay_message_template.format(object_name=hazard.get('object_name', hazard['type'])), "info"))
-                    self._set_hazard_state(hazard_id, decay_target_state, messages)
-                    if self.game_logic.is_game_over: break
-                    if hazard_id not in self.active_hazards: continue
-
-            # --- Handle Spreading Fire to Adjacent Rooms ---
-            if hazard['type'] == self.game_logic.game_data.HAZARD_TYPE_SPREADING_FIRE and \
-            state_data.get("spreads_to_adjacent_room_chance", 0) > 0 and \
-            not self.game_logic.is_game_over:
-
-                spread_chance = state_data["spreads_to_adjacent_room_chance"]
-                agg_influence_on_spread = state_data.get("aggression_influence", {}).get("spread_to_room_chance", 0.0)
-                current_aggression = hazard.get("aggression", agg_factor)
-                actual_spread_chance = min(1.0, max(0.0, spread_chance + (agg_influence_on_spread * current_aggression)))
-
-                if random.random() < actual_spread_chance:
-                    current_fire_room_data = self.rooms.get(hazard['location'])
-                    if current_fire_room_data and current_fire_room_data.get("exits"):
-                        for exit_dir, adj_room_name in current_fire_room_data["exits"].items():
-                            if adj_room_name in self.rooms:
-                                # Check if adjacent room is already on fire (or has a spreading_fire hazard)
-                                adj_room_already_on_fire = False
-                                existing_fire_in_adj_id = None
-                                for adj_h_id, adj_h in self.active_hazards.items():
-                                    if adj_h['location'] == adj_room_name and \
-                                    adj_h['type'] == self.game_logic.game_data.HAZARD_TYPE_SPREADING_FIRE:
-                                        adj_room_already_on_fire = True
-                                        existing_fire_in_adj_id = adj_h_id
-                                        break
-                                if not adj_room_already_on_fire:
-                                    messages.append(color_text(f"The inferno in {hazard['location']} spreads to the {adj_room_name}!", "error"))
-                                    self._add_active_hazard(
-                                        hazard_type=self.game_logic.game_data.HAZARD_TYPE_SPREADING_FIRE,
-                                        location=adj_room_name,
-                                        initial_state_override="burning_low",
-                                        target_object_override=f"fire spreading from {hazard['location']}",
-                                        support_object_override="the room itself"
-                                    )
-                                    if adj_room_name in self.room_env:
-                                        self.room_env[adj_room_name]['is_on_fire'] = True
-                                elif existing_fire_in_adj_id:
-                                    adj_fire_hazard = self.active_hazards.get(existing_fire_in_adj_id)
-                                    if adj_fire_hazard and adj_fire_hazard['state'] == "burning_low":
-                                        messages.append(color_text(f"The fire from {hazard['location']} intensifies the blaze in {adj_room_name}!", "error"))
-                                        self._set_hazard_state(existing_fire_in_adj_id, "burning_high", messages)
-                                if self.game_logic.is_game_over: break
-                        if self.game_logic.is_game_over: break
-
-            self.processed_hazards_this_turn.add(hazard_id)
-
-        # After all hazards, check for global environmental reactions (e.g., gas explosions)
-        if not self.game_logic.is_game_over:
-            self._check_global_environmental_reactions(messages)
-
-        death_occurred_this_turn = self.game_logic.is_game_over and not self.game_logic.game_won
-        logging.debug(f"HazardEngine: --- Hazard Turn Update End --- Messages: {len(messages)}, Death: {death_occurred_this_turn}")
-        return list(filter(None, messages)), death_occurred_this_turn
 
     def _calculate_aggression_factor(self):
         """Calculates global aggression factor."""
@@ -782,28 +396,6 @@ class HazardEngine:
                 self.game_logic.apply_damage_to_player(hit_damage, f"hit by {hazard.get('object_name', hazard['type'])}")
             if state_data.get("chance_to_progress") == 1.0 and state_data.get("next_state"):
                  self._set_hazard_state(hazard_id, state_data["next_state"], messages_list)
-
-
-    def _mri_pull_objects(self, hazard_id, hazard, state_data, messages_list):
-        """Handles MRI pulling objects."""
-        # (Simplified logic for brevity - check player inventory, room objects)
-        pass # Full logic in previous snippets
-
-    def _mri_explosion_countdown(self, hazard_id, hazard, state_data, messages_list):
-        """Handles MRI explosion countdown."""
-        # (Simplified logic for brevity - countdown, explosion effect)
-        if self.game_logic.is_game_over: return
-        if 'countdown_turns_remaining' not in hazard:
-            hazard['countdown_turns_remaining'] = state_data.get("countdown_turns", 2)
-        hazard['countdown_turns_remaining'] -= 1
-        if hazard['countdown_turns_remaining'] > 0:
-            messages_list.append(color_text(f"MRI whines... meltdown in {hazard['countdown_turns_remaining']}...", "error"))
-        else:
-            messages_list.append(color_text(state_data.get("explosion_death_message", "MRI explodes!"), "error"))
-            if self.player.get('location') == hazard['location']:
-                self.game_logic.is_game_over = True; self.game_logic.game_won = False
-                self.player['last_hazard_type'] = hazard['type']; self.player['last_hazard_object_name'] = hazard.get('object_name', hazard['type'])
-            self._set_hazard_state(hazard_id, state_data.get("next_state", "exploded"), messages_list)
 
     def _check_floor_hazards_on_move(self, room_name, messages_list):
         """
@@ -1031,9 +623,15 @@ class HazardEngine:
     def get_room_hazards(self, room_name): return self.get_room_hazards_descriptions(room_name)
 
     def _add_to_journal(self, category, entry):
-        if self.game_logic and hasattr(self.game_logic, '_add_to_journal'): return self.game_logic._add_to_journal(category, entry)
+        """
+        Adds an entry to the player's journal via the GameLogic instance.
+        (This is a proxy method; actual journal logic is in GameLogic or AchievementsSystem)
+        """
+        if self.game_logic and hasattr(self.game_logic, '_add_to_journal'):
+            return self.game_logic._add_to_journal(category, entry)
+        logging.warning("HazardEngine: _add_to_journal called, but game_logic or its _add_to_journal method is unavailable.")
         return False
-        
+
     # In HazardEngine.save_state()
     def save_state(self):
         return {
@@ -1043,132 +641,441 @@ class HazardEngine:
             "temporary_room_effects": copy.deepcopy(self.temporary_room_effects) # Add this
         }
 
-    # In HazardEngine.load_state()
-    def load_state(self, state_dict):
-        if not state_dict: return
-        self.active_hazards = copy.deepcopy(state_dict.get("active_hazards", {}))
-        loaded_room_env = copy.deepcopy(state_dict.get("room_env", {}))
-        # ... (existing room_env loading logic) ...
-        self.next_hazard_id = state_dict.get("next_hazard_id", self.next_hazard_id)
-        self.temporary_room_effects = copy.deepcopy(state_dict.get("temporary_room_effects", [])) # Add this
-        # Ensure room_env reflects active temporary effects upon load
-        for effect in self.temporary_room_effects:
-            if effect['room'] in self.room_env and effect['key'] in self.room_env[effect['room']]:
-                 self.room_env[effect['room']][effect['key']] = effect['temp_value']
 
-        logging.info(f"HazardEngine state loaded. Active hazards: {len(self.active_hazards)}. Temp Effects: {len(self.temporary_room_effects)}")
+    def _trigger_mri_qte_stage(self, hazard_id, hazard_instance, state_data, messages_list):
+        """ Autonomous action to trigger a QTE stage for the MRI based on its current state's qte_stage_context. """
+        if self.game_logic.is_game_over:
+            return
 
-    def _add_active_hazard(self, hazard_type, location, 
-                           initial_state_override=None,
-                           target_object_override=None, 
-                           support_object_override=None,
-                           source_trigger_id=None,
-                           default_placement_options=None): # default_placement_options was from previous review, might not be used here
+        qte_context_def = state_data.get("qte_stage_context")
+        if not qte_context_def:
+            self.logger.error(f"Hazard {hazard_id} in state {hazard_instance['state']} tried _trigger_mri_qte_stage but no qte_stage_context defined.")
+            # Potentially transition to an error state or a safe state for the hazard
+            self._set_hazard_state(hazard_id, "shorted_out", messages_list) # Example: default to safe state
+            return
+
+        qte_type = qte_context_def.get("qte_type")
+        duration = qte_context_def.get("duration", self.game_logic.game_data.QTE_DEFAULT_DURATION)
+        
+        # Prepare the full QTE context for GameLogic, including what the hazard should do next
+        full_qte_context_for_game_logic = {
+            "ui_prompt_message": qte_context_def.get("ui_prompt_message", "React quickly!"),
+            "expected_input_word": qte_context_def.get("expected_input_word", "action"), # For word/sequence QTEs
+            "input_type": qte_context_def.get("input_type", "word"),
+            "target_mash_count": qte_context_def.get("target_mash_count"), # For button_mash QTEs
+
+            "success_message": qte_context_def.get("success_message", "Success!"),
+            "failure_message_wrong_input": qte_context_def.get("failure_message", "Failure!"), # Generic failure if not timeout
+            "timeout_message": qte_context_def.get("timeout_message", "Too slow!"),
+            
+            "hp_damage_on_failure": qte_context_def.get("hp_damage_on_failure", 0),
+            "is_fatal_on_failure": qte_context_def.get("is_fatal_on_failure", False),
+            
+            "qte_source_hazard_id": hazard_id,
+            "qte_source_hazard_state": hazard_instance['state'], # The state that is triggering this QTE
+            
+            "next_state_after_qte_success": qte_context_def.get("next_state_after_qte_success"),
+            "next_state_after_qte_failure": qte_context_def.get("next_state_after_qte_failure"),
+            
+            # Pass any other specific fields from qte_stage_context if GameLogic or UI needs them
+            "qte_custom_data": qte_context_def.get("custom_data") # Example
+        }
+
+        if qte_type and hasattr(self.game_logic, 'trigger_qte'):
+            self.logger.info(f"HazardEngine: Hazard {hazard_id} triggering QTE type '{qte_type}' via GameLogic.")
+            self.game_logic.trigger_qte(qte_type, duration, full_qte_context_for_game_logic)
+            # GameLogic will set player.qte_active; HazardEngine's main loop will pause this hazard.
+        else:
+            self.logger.error(f"HazardEngine: Could not trigger QTE for hazard {hazard_id}. Missing qte_type or game_logic.trigger_qte.")
+            # Fallback: if QTE system fails to init, assume QTE failure for hazard progression.
+            next_state_on_system_fail = qte_context_def.get("next_state_after_qte_failure", "shorted_out")
+            if hazard_id in self.active_hazards: # Ensure hazard still exists
+                 self._set_hazard_state(hazard_id, next_state_on_system_fail, messages_list)
+
+    def hazard_turn_update(self):
         """
-        Adds an instance of a specified hazard type to the game world.
-
-        Args:
-            hazard_type (str): The key of the hazard in self.hazards_master_data.
-            location (str): The room name where the hazard is located.
-            initial_state_override (str, optional): Specific state to start in, overrides definition.
-            target_object_override (str, optional): Specific name for this instance (e.g., "the sparking console").
-                                                    Overrides random choice from object_name_options.
-            support_object_override (str, optional): Specific support object (e.g., "on the workbench").
-                                                     Overrides dynamic selection.
-            source_trigger_id (str, optional): ID of another hazard that triggered this one.
-            default_placement_options (list, optional): Not currently used directly here, but was part of _process_hazard_entry.
-                                                       Support object selection is now more self-contained.
+        Processes all active hazards for the current game turn.
+        Handles temporary effects, autonomous state progression, actions, 
+        player-seeking, and chain reactions.
 
         Returns:
-            str or None: The ID of the newly created hazard instance, or None if creation failed.
+            tuple: (list_of_messages, death_occurred_bool)
+                A list of messages generated by hazard activities this turn,
+                and a boolean indicating if any hazard activity resulted in player death.
         """
-        if hazard_type not in self.hazards_master_data:
-            logging.warning(f"HazardEngine: Attempted to add unknown hazard type: {hazard_type}")
-            return None
+        messages = []
+        # Aggression factor can influence hazard behavior (e.g., chance to progress state)
+        agg_factor = self._calculate_aggression_factor() 
+        self.logger.debug(f"HazardEngine: --- Hazard Turn Update Start --- Aggression Factor: {agg_factor:.2f}")
 
-        hazard_id = self._generate_hazard_id()
-        base_definition = self.hazards_master_data[hazard_type]
+        # --- Process Temporary Room Effects ---
+        effects_to_remove_indices = []
+        environment_changed_by_temp_effects = False
+        for i, effect in enumerate(self.temporary_room_effects):
+            effect['turns_left'] -= 1
+            if effect['turns_left'] <= 0:
+                effects_to_remove_indices.append(i)
+                # Revert the effect
+                if effect['room'] in self.room_env:
+                    self.room_env[effect['room']][effect['key']] = effect['original_value']
+                    environment_changed_by_temp_effects = True
+                    self.logger.info(f"HazardEngine: Temporary effect expired in '{effect['room']}': '{effect['key']}' reverted to '{effect['original_value']}'.")
+                    if effect['key'] == 'visibility' and effect['temp_value'] != effect['original_value']:
+                        messages.append(color_text(f"The {effect['key']} in {effect['room']} returns to normal.", "info"))
+        for i in sorted(effects_to_remove_indices, reverse=True):
+            self.temporary_room_effects.pop(i)
+        if environment_changed_by_temp_effects:
+            self.update_environmental_states()
 
-        # Determine actual object name for this instance
-        final_object_name = target_object_override
-        if not final_object_name:
-            options = base_definition.get("object_name_options", [base_definition.get("name", hazard_type).lower().replace(" ", "_")])
-            final_object_name = random.choice(options) if options else base_definition.get("name", hazard_type)
+        # --- Process Active Hazards ---
+        self.processed_hazards_this_turn.clear() 
+        active_hazard_ids_this_cycle = list(self.active_hazards.keys())
 
-        # Determine support object (where it's located, e.g., "on the table")
-        final_support_object = support_object_override
-        if not final_support_object:
-            # Logic to pick a support object if not overridden:
-            # 1. Check 'placement_object' in hazard definition (list of preferred support types like "desk", "wall")
-            # 2. See if any of those are present in the room's furniture or objects.
-            # 3. Fallback if necessary.
-            room_data_for_placement = self.rooms.get(location, {}) # self.rooms is GameLogic's current_level_rooms
+        for hazard_id in active_hazard_ids_this_cycle:
+            if self.game_logic.is_game_over: break
+            if hazard_id in self.processed_hazards_this_turn or hazard_id not in self.active_hazards: continue
+
+            hazard = self.active_hazards[hazard_id]
+            hazard['turns_in_state'] += 1
             
-            possible_supports_in_room = []
-            if room_data_for_placement and isinstance(room_data_for_placement, dict):
-                room_furniture_names = [f.get("name") for f in room_data_for_placement.get("furniture", []) if isinstance(f, dict) and f.get("name")]
-                room_object_names = room_data_for_placement.get("objects", [])
-                all_potential_supports_in_room = room_furniture_names + room_object_names
-            else:
-                all_potential_supports_in_room = []
+            # Update hazard's individual aggression level
+            hazard_aggression_increase = hazard['data'].get('aggression_per_turn_increase', 0.0)
+            max_hazard_aggression = hazard['data'].get('max_aggression', 5.0)
+            hazard['aggression'] = min(hazard.get('aggression', 0) + hazard_aggression_increase, max_hazard_aggression)
 
-            preferred_support_types = base_definition.get("placement_object", []) # e.g., ["desk", "wall panel"]
+            current_state_name = hazard["state"]
+            state_data = hazard["data"]["states"].get(current_state_name)
+            if not state_data:
+                self.logger.warning(f"HazardEngine: Hazard {hazard_id} ('{hazard['type']}') in unknown state '{current_state_name}'. Skipping update.")
+                continue
             
-            valid_preferred_supports = [s for s in all_potential_supports_in_room if s in preferred_support_types]
+            # --- IMPROVED QTE PAUSE LOGIC ---
+            # More robust check: if GameLogic has an active QTE and this hazard is its source
+            is_this_hazard_awaiting_qte_resolution = False
+            if self.game_logic.player.get('qte_active'):
+                qte_ctx = self.game_logic.player.get('qte_context', {})
+                if qte_ctx.get('qte_source_hazard_id') == hazard_id:
+                    is_this_hazard_awaiting_qte_resolution = True
+            
+            if is_this_hazard_awaiting_qte_resolution:
+                self.logger.debug(f"Hazard {hazard_id} ('{hazard['type']}') awaiting QTE resolution ({self.game_logic.player['qte_active']}). Skipping turn update actions and progression.")
+                self.processed_hazards_this_turn.add(hazard_id) # Still mark as processed for this turn cycle
+                
+                # Apply per-turn room effects EVEN IF QTE is active, unless QTE pauses the world
+                player_is_present = self.player.get('location') == hazard['location']
+                if player_is_present and not self.game_logic.is_game_over:
+                    self._apply_per_turn_room_effects(hazard_id, hazard, state_data, messages)
+                    if self.game_logic.is_game_over: break
+                continue # Skip autonomous actions and state changes for this hazard
+            # --- END IMPROVED QTE PAUSE LOGIC ---
 
-            if valid_preferred_supports:
-                final_support_object = random.choice(valid_preferred_supports)
-            elif all_potential_supports_in_room: # Fallback to any object/furniture in the room
-                final_support_object = random.choice(all_potential_supports_in_room)
-            else: # Last resort
-                final_support_object = "an indeterminate spot" 
-        
-        # Determine initial state
-        final_initial_state = initial_state_override
-        if not final_initial_state: # If no override, use definition's initial_state
-            final_initial_state = base_definition.get('initial_state')
-        
-        # Validate the chosen initial state
-        if not final_initial_state or final_initial_state not in base_definition.get('states', {}):
-            # If still no valid state, try to pick the first defined state as a fallback
-            if base_definition.get('states'):
-                try:
-                    first_defined_state = list(base_definition['states'].keys())[0]
-                    if not final_initial_state: # If it was None from definition
-                        logging.warning(f"HazardEngine: Hazard type {hazard_type} has no 'initial_state' defined. Using first state: '{first_defined_state}'.")
-                    else: # If override was invalid
-                        logging.warning(f"HazardEngine: Provided initial_state_override '{initial_state_override}' for {hazard_type} is invalid. Using first state: '{first_defined_state}'.")
-                    final_initial_state = first_defined_state
-                except (IndexError, TypeError):
-                    logging.error(f"HazardEngine: Hazard type {hazard_type} has no states defined. Cannot add hazard.")
-                    return None
-            else: # No states defined at all
-                logging.error(f"HazardEngine: Hazard type {hazard_type} has no states defined. Cannot add hazard.")
-                return None
+            player_is_present = self.player.get('location') == hazard['location']
 
-        new_hazard_instance = {
-            "id": hazard_id,
-            "type": hazard_type,
-            "name": base_definition.get("name", hazard_type), # User-friendly name from definition
-            "object_name": final_object_name,       # Specific instance name, e.g., "the sparking console"
-            "support_object": final_support_object, # Where it is, e.g., "on the workbench"
-            "location": location,
-            "state": final_initial_state,
-            "data": copy.deepcopy(base_definition), # Full master definition for reference during runtime
-            "turns_in_state": 0,
-            "aggression": base_definition.get("initial_aggression", 0), # Can be set in master def
-            "triggered_by_hazard_id": source_trigger_id,
-            # Add any other dynamic properties needed at instance level
-        }
-        self.active_hazards[hazard_id] = new_hazard_instance
-        logging.info(f"HazardEngine: Added active hazard ID {hazard_id}, Type '{hazard_type}' (as '{final_object_name}' on/near '{final_support_object}'), Location '{location}', Initial State '{final_initial_state}'.")
-        
-        # Apply its initial environmental effect immediately after adding
-        # self._apply_environmental_effect_from_hazard(new_hazard_instance) # This will be called by update_environmental_states
-        # Instead of calling directly, let initialize_for_level call update_environmental_states once after all initial placements.
-        # If a hazard is added mid-game (e.g., by another hazard), then update_environmental_states should be called.
+            # 1. Apply Per-Turn Room Effects (if player is present)
+            if player_is_present and not self.game_logic.is_game_over:
+                self._apply_per_turn_room_effects(hazard_id, hazard, state_data, messages)
+                if self.game_logic.is_game_over: break 
+            
+            # 2. Autonomous Actions defined for the current state
+            autonomous_action_key = state_data.get('autonomous_action')
+            if autonomous_action_key and not self.game_logic.is_game_over:
+                can_run_globally = state_data.get("global_autonomous_action", False)
+                if player_is_present or can_run_globally:
+                    action_method = getattr(self, f"_{autonomous_action_key}", None)
+                    if action_method and callable(action_method):
+                        self.logger.debug(f"HazardEngine: Executing autonomous action '{autonomous_action_key}' for hazard {hazard_id}.")
+                        action_method(hazard_id, hazard, state_data, messages)
+                    else:
+                        self.logger.warning(f"HazardEngine: Unknown autonomous_action '{autonomous_action_key}' for hazard {hazard_id}.")
+                    if self.game_logic.is_game_over: break
 
-        return hazard_id
+            # Only proceed with state changes if not paused by a QTE
+            if not self.game_logic.player.get('qte_active') or self.game_logic.player.get('qte_context', {}).get('qte_source_hazard_id') != hazard_id:
+                # 3. Chance to Progress State
+                if "chance_to_progress" in state_data and "next_state" in state_data and not self.game_logic.is_game_over:
+                    base_chance = state_data["chance_to_progress"]
+                    aggro_boost_def = state_data.get("aggression_influence", {}).get("chance_to_progress_boost", 0.0)
+                    current_aggression = hazard.get("aggression", agg_factor)
+                    aggro_boost_val = aggro_boost_def * current_aggression
+                    
+                    actual_chance = min(1.0, max(0.0, base_chance + aggro_boost_val))
+                    
+                    if random.random() < actual_chance:
+                        self.logger.debug(f"Hazard {hazard_id} progressing state by chance ({actual_chance:.2f}).")
+                        self._set_hazard_state(hazard_id, state_data["next_state"], messages)
+                        if self.game_logic.is_game_over: break
+                        if hazard_id in self.active_hazards:
+                            current_state_name = self.active_hazards[hazard_id]["state"]
+                            state_data = self.active_hazards[hazard_id]["data"]["states"].get(current_state_name)
+                            if not state_data: continue
+                        else: continue
+
+                # 4. Chance to Revert State
+                if "chance_to_revert" in state_data and "revert_state" in state_data and not self.game_logic.is_game_over:
+                    base_revert_chance = state_data.get("chance_to_revert", 0.05)
+                    revert_agg_multiplier = state_data.get("aggression_influence", {}).get("revert_chance_multiplier", 1.0)
+                    current_aggression = hazard.get("aggression", agg_factor)
+                    effective_revert_chance = base_revert_chance * revert_agg_multiplier 
+
+                    if random.random() < effective_revert_chance:
+                        revert_msg_template = state_data.get("revert_message", "The {object_name} calms down.")
+                        messages.append(color_text(revert_msg_template.format(object_name=hazard.get('object_name', hazard['type'])), "info"))
+                        self._set_hazard_state(hazard_id, state_data["revert_state"], messages)
+                        if self.game_logic.is_game_over: break
+                        if hazard_id in self.active_hazards:
+                            current_state_name = self.active_hazards[hazard_id]["state"]
+                            state_data = self.active_hazards[hazard_id]["data"]["states"].get(current_state_name)
+                            if not state_data: continue
+                        else: continue
+
+            # 5. Hazard Interactions (hazard affecting another hazard in the same room)
+            if "hazard_interaction" in state_data and isinstance(state_data["hazard_interaction"], dict) and not self.game_logic.is_game_over:
+                self._handle_hazard_to_hazard_interactions(hazard, state_data["hazard_interaction"], agg_factor, messages)
+                if self.game_logic.is_game_over: break 
+                if hazard_id in self.active_hazards:
+                    current_state_name = self.active_hazards[hazard_id]["state"]
+                    state_data = self.active_hazards[hazard_id]["data"]["states"].get(current_state_name)
+                    if not state_data: continue
+                else: continue
+
+            # 6. Autonomous Decay
+            decay_info = state_data.get("autonomous_decay") 
+            if not decay_info and hazard['type'] == self.game_logic.game_data.HAZARD_TYPE_SPREADING_FIRE:
+                decay_info = state_data.get("autonomous_decay_to_burnt_out")
+
+            if decay_info and isinstance(decay_info, dict) and not self.game_logic.is_game_over:
+                decay_chance = decay_info.get("chance", 0.05)
+                if random.random() < decay_chance:
+                    decay_target_state = decay_info.get("target_state")
+                    decay_message_template = decay_info.get("message", "The {object_name} diminishes.")
+                    messages.append(color_text(decay_message_template.format(object_name=hazard.get('object_name', hazard['type'])), "info"))
+                    self._set_hazard_state(hazard_id, decay_target_state, messages)
+                    if self.game_logic.is_game_over: break
+                    if hazard_id not in self.active_hazards: continue
+
+            # 7. Special handling for Spreading Fire
+            if hazard['type'] == self.game_logic.game_data.HAZARD_TYPE_SPREADING_FIRE and \
+            state_data.get("spreads_to_adjacent_room_chance", 0) > 0 and \
+            not self.game_logic.is_game_over:
+                # Fire spreading logic (preserved from the existing implementation)
+                # ...
+
+                self.processed_hazards_this_turn.add(hazard_id)
+
+        # After all hazards processed, check for global environmental reactions (e.g., gas explosions)
+        if not self.game_logic.is_game_over:
+            self._check_global_environmental_reactions(messages)
+
+        death_occurred_this_turn = self.game_logic.is_game_over and not self.game_logic.game_won
+        self.logger.debug(f"HazardEngine: --- Turn Update End --- Msgs: {len(messages)}, Death: {death_occurred_this_turn}")
+        return list(filter(None, messages)), death_occurred_this_turn
+
+    def hazard_turn_update(self):
+        """
+        Processes all active hazards for the current game turn.
+        Handles temporary effects, autonomous state progression, actions, 
+        player-seeking, and chain reactions.
+
+        Returns:
+            tuple: (list_of_messages, death_occurred_bool)
+                A list of messages generated by hazard activities this turn,
+                and a boolean indicating if any hazard activity resulted in player death.
+        """
+        messages = []
+        # Aggression factor can influence hazard behavior (e.g., chance to progress state)
+        agg_factor = self._calculate_aggression_factor() 
+        logging.debug(f"HazardEngine: --- Hazard Turn Update Start --- Aggression Factor: {agg_factor:.2f}")
+
+        # --- Process Temporary Room Effects ---
+        effects_to_remove_indices = []
+        environment_changed_by_temp_effects = False
+        for i, effect in enumerate(self.temporary_room_effects):
+            effect['turns_left'] -= 1
+            if effect['turns_left'] <= 0:
+                effects_to_remove_indices.append(i)
+                # Revert the effect
+                if effect['room'] in self.room_env:
+                    self.room_env[effect['room']][effect['key']] = effect['original_value']
+                    environment_changed_by_temp_effects = True
+                    logging.info(f"HazardEngine: Temporary effect expired in '{effect['room']}': '{effect['key']}' reverted to '{effect['original_value']}'.")
+                    if effect['key'] == 'visibility' and effect['temp_value'] != effect['original_value']:
+                        messages.append(color_text(f"The {effect['key']} in {effect['room']} returns to normal.", "info"))
+        for i in sorted(effects_to_remove_indices, reverse=True):
+            self.temporary_room_effects.pop(i)
+        if environment_changed_by_temp_effects:
+            self.update_environmental_states()
+
+        # --- Process Active Hazards ---
+        self.processed_hazards_this_turn.clear() 
+        active_hazard_ids_this_cycle = list(self.active_hazards.keys())
+
+        for hazard_id in active_hazard_ids_this_cycle:
+            if self.game_logic.is_game_over: break
+            if hazard_id in self.processed_hazards_this_turn or hazard_id not in self.active_hazards: continue
+
+            hazard = self.active_hazards[hazard_id]
+            hazard['turns_in_state'] += 1
+            
+            # Update hazard's individual aggression level
+            hazard_aggression_increase = hazard['data'].get('aggression_per_turn_increase', 0.0)
+            max_hazard_aggression = hazard['data'].get('max_aggression', 5.0)
+            hazard['aggression'] = min(hazard.get('aggression', 0) + hazard_aggression_increase, max_hazard_aggression)
+
+            current_state_name = hazard["state"]
+            state_data = hazard["data"]["states"].get(current_state_name)
+            if not state_data:
+                logging.warning(f"HazardEngine: Hazard {hazard_id} ('{hazard['type']}') in unknown state '{current_state_name}'. Skipping update.")
+                continue
+                
+            # QTE pause logic - skip processing if hazard is waiting for QTE resolution
+            is_this_hazard_awaiting_qte_resolution = (
+                self.game_logic.player.get('qte_active') and
+                self.game_logic.player.get('qte_context', {}).get('qte_source_hazard_id') == hazard_id and
+                self.game_logic.player.get('qte_context', {}).get('is_mri_projectile_qte', False)
+            )
+            if is_this_hazard_awaiting_qte_resolution:
+                logging.debug(f"Hazard {hazard_id} awaiting QTE resolution. Skipping turn update.")
+                self.processed_hazards_this_turn.add(hazard_id)
+                continue
+
+            player_is_present = self.player.get('location') == hazard['location']
+
+            # 1. Apply Per-Turn Room Effects (if player is present)
+            if player_is_present and not self.game_logic.is_game_over:
+                self._apply_per_turn_room_effects(hazard_id, hazard, state_data, messages)
+                if self.game_logic.is_game_over: break 
+            
+            # 2. Autonomous Actions defined for the current state
+            autonomous_action_key = state_data.get('autonomous_action')
+            if autonomous_action_key and not self.game_logic.is_game_over:
+                can_run_globally = state_data.get("global_autonomous_action", False)
+                if player_is_present or can_run_globally:
+                    action_method = getattr(self, f"_{autonomous_action_key}", None)
+                    if action_method and callable(action_method):
+                        logging.debug(f"HazardEngine: Executing autonomous action '{autonomous_action_key}' for hazard {hazard_id}.")
+                        action_method(hazard_id, hazard, state_data, messages)
+                    else:
+                        logging.warning(f"HazardEngine: Unknown autonomous_action '{autonomous_action_key}' for hazard {hazard_id}.")
+                    if self.game_logic.is_game_over: break
+
+            # Only proceed with state changes if not paused by a QTE
+            if not self.game_logic.player.get('qte_active') or self.game_logic.player.get('qte_context', {}).get('qte_source_hazard_id') != hazard_id:
+                # 3. Chance to Progress State
+                if "chance_to_progress" in state_data and "next_state" in state_data and not self.game_logic.is_game_over:
+                    base_chance = state_data["chance_to_progress"]
+                    aggro_boost_def = state_data.get("aggression_influence", {}).get("chance_to_progress_boost", 0.0)
+                    current_aggression = hazard.get("aggression", agg_factor)
+                    aggro_boost_val = aggro_boost_def * current_aggression
+                    
+                    actual_chance = min(1.0, max(0.0, base_chance + aggro_boost_val))
+                    
+                    if random.random() < actual_chance:
+                        logging.debug(f"Hazard {hazard_id} progressing state by chance ({actual_chance:.2f}).")
+                        self._set_hazard_state(hazard_id, state_data["next_state"], messages)
+                        if self.game_logic.is_game_over: break
+                        if hazard_id in self.active_hazards:
+                            current_state_name = self.active_hazards[hazard_id]["state"]
+                            state_data = self.active_hazards[hazard_id]["data"]["states"].get(current_state_name)
+                            if not state_data: continue
+                        else: continue
+
+                # 4. Chance to Revert State
+                if "chance_to_revert" in state_data and "revert_state" in state_data and not self.game_logic.is_game_over:
+                    base_revert_chance = state_data.get("chance_to_revert", 0.05)
+                    revert_agg_multiplier = state_data.get("aggression_influence", {}).get("revert_chance_multiplier", 1.0)
+                    current_aggression = hazard.get("aggression", agg_factor)
+                    effective_revert_chance = base_revert_chance * revert_agg_multiplier 
+
+                    if random.random() < effective_revert_chance:
+                        revert_msg_template = state_data.get("revert_message", "The {object_name} calms down.")
+                        messages.append(color_text(revert_msg_template.format(object_name=hazard.get('object_name', hazard['type'])), "info"))
+                        self._set_hazard_state(hazard_id, state_data["revert_state"], messages)
+                        if self.game_logic.is_game_over: break
+                        if hazard_id in self.active_hazards:
+                            current_state_name = self.active_hazards[hazard_id]["state"]
+                            state_data = self.active_hazards[hazard_id]["data"]["states"].get(current_state_name)
+                            if not state_data: continue
+                        else: continue
+
+            # 5. Hazard Interactions (hazard affecting another hazard in the same room)
+            if "hazard_interaction" in state_data and isinstance(state_data["hazard_interaction"], dict) and not self.game_logic.is_game_over:
+                self._handle_hazard_to_hazard_interactions(hazard, state_data["hazard_interaction"], agg_factor, messages)
+                if self.game_logic.is_game_over: break 
+                if hazard_id in self.active_hazards:
+                    current_state_name = self.active_hazards[hazard_id]["state"]
+                    state_data = self.active_hazards[hazard_id]["data"]["states"].get(current_state_name)
+                    if not state_data: continue
+                else: continue
+
+            # 6. Autonomous Decay
+            decay_info = state_data.get("autonomous_decay") 
+            if not decay_info and hazard['type'] == self.game_logic.game_data.HAZARD_TYPE_SPREADING_FIRE:
+                decay_info = state_data.get("autonomous_decay_to_burnt_out")
+
+            if decay_info and isinstance(decay_info, dict) and not self.game_logic.is_game_over:
+                decay_chance = decay_info.get("chance", 0.05)
+                if random.random() < decay_chance:
+                    decay_target_state = decay_info.get("target_state")
+                    decay_message_template = decay_info.get("message", "The {object_name} diminishes.")
+                    messages.append(color_text(decay_message_template.format(object_name=hazard.get('object_name', hazard['type'])), "info"))
+                    self._set_hazard_state(hazard_id, decay_target_state, messages)
+                    if self.game_logic.is_game_over: break
+                    if hazard_id not in self.active_hazards: continue
+
+            # 7. Special handling for Spreading Fire
+            if hazard['type'] == self.game_logic.game_data.HAZARD_TYPE_SPREADING_FIRE and \
+            state_data.get("spreads_to_adjacent_room_chance", 0) > 0 and \
+            not self.game_logic.is_game_over:
+
+                spread_chance = state_data["spreads_to_adjacent_room_chance"]
+                agg_influence_on_spread = state_data.get("aggression_influence", {}).get("spread_to_room_chance", 0.0)
+                current_aggression = hazard.get("aggression", agg_factor)
+                actual_spread_chance = min(1.0, max(0.0, spread_chance + (agg_influence_on_spread * current_aggression)))
+
+                if random.random() < actual_spread_chance:
+                    current_fire_room_data = self.rooms.get(hazard['location'])
+                    if current_fire_room_data and current_fire_room_data.get("exits"):
+                        for exit_dir, adj_room_name in current_fire_room_data["exits"].items():
+                            if adj_room_name in self.rooms:
+                                # Check if adjacent room already has fire
+                                adj_room_already_on_fire = False
+                                existing_fire_in_adj_id = None
+                                for adj_h_id, adj_h in self.active_hazards.items():
+                                    if adj_h['location'] == adj_room_name and \
+                                    adj_h['type'] == self.game_logic.game_data.HAZARD_TYPE_SPREADING_FIRE:
+                                        adj_room_already_on_fire = True
+                                        existing_fire_in_adj_id = adj_h_id
+                                        break
+                                        
+                                if not adj_room_already_on_fire:
+                                    messages.append(color_text(f"Inferno in {hazard['location']} spreads to {adj_room_name}!", "error"))
+                                    self._add_active_hazard(
+                                        hazard_type=self.game_logic.game_data.HAZARD_TYPE_SPREADING_FIRE,
+                                        location=adj_room_name,
+                                        initial_state_override="burning_low",
+                                        target_object_override=f"fire from {hazard['location']}",
+                                        support_object_override="room itself"
+                                    )
+                                    if adj_room_name in self.room_env:
+                                        self.room_env[adj_room_name]['is_on_fire'] = True
+                                elif existing_fire_in_adj_id:
+                                    adj_fire_hazard = self.active_hazards.get(existing_fire_in_adj_id)
+                                    if adj_fire_hazard and adj_fire_hazard['state'] == "burning_low":
+                                        messages.append(color_text(f"Fire from {hazard['location']} intensifies blaze in {adj_room_name}!", "error"))
+                                        self._set_hazard_state(existing_fire_in_adj_id, "burning_high", messages)
+                                
+                                if self.game_logic.is_game_over: break
+                        if self.game_logic.is_game_over: break
+
+            self.processed_hazards_this_turn.add(hazard_id)
+
+        # After all hazards processed, check for global environmental reactions (e.g., gas explosions)
+        if not self.game_logic.is_game_over:
+            self._check_global_environmental_reactions(messages)
+
+        death_occurred_this_turn = self.game_logic.is_game_over and not self.game_logic.game_won
+        logging.debug(f"HazardEngine: --- Turn Update End --- Msgs: {len(messages)}, Death: {death_occurred_this_turn}")
+        return list(filter(None, messages)), death_occurred_this_turn
 
     def _set_hazard_state(self, hazard_id, new_state_name, messages_list):
         """
@@ -1187,50 +1094,59 @@ class HazardEngine:
         """
         hazard = self.active_hazards.get(hazard_id)
         if not hazard:
-            logging.warning(f"HazardEngine: Hazard ID {hazard_id} not found for state change.")
+            self.logger.warning(f"HazardEngine: Hazard ID {hazard_id} not found for state change.")
             return False
 
         hazard_def_states = hazard['data'].get('states', {})
         old_state_name = hazard['state']
 
-        if new_state_name is None: # Request to remove the hazard
-            logging.info(f"HazardEngine: Removing hazard {hazard_id} ('{hazard['type']}') from {hazard['location']}.")
-            
-            # Prepare to remove its environmental effect by getting its old state data
-            # old_state_data_for_removal = copy.deepcopy(hazard_def_states.get(old_state_name, {}))
-            # old_state_data_for_removal['location_ref_for_removal'] = hazard['location'] # For _remove_environmental_effect
+        # Check for on_state_entry_apply_damage for states like mri_qte_failure_damage_1
+        new_state_definition_for_entry_effect = hazard['data'].get('states', {}).get(new_state_name, {})
+        damage_on_entry = new_state_definition_for_entry_effect.get("on_state_entry_apply_damage")
+        
+        # Apply on_state_entry_apply_damage if player is present
+        player_is_present_for_entry_damage = self.player.get('location') == hazard['location']
+        if damage_on_entry and isinstance(damage_on_entry, (int, float)) and damage_on_entry > 0 and player_is_present_for_entry_damage:
+            if not self.game_logic.is_game_over:
+                damage_source_name_on_entry = hazard.get('object_name', hazard['name'])
+                self.game_logic.apply_damage_to_player(damage_on_entry, f"hazard effect from {damage_source_name_on_entry} entering state {new_state_name}")
+                messages_list.append(color_text(f"You take {damage_on_entry} damage as the {damage_source_name_on_entry} changes state!", "error"))
+                self.logger.info(f"Hazard {hazard_id} applied {damage_on_entry} damage on entry to state {new_state_name}.")
+                if self.game_logic.is_game_over:
+                    # If damage was fatal, the rest of _set_hazard_state might still run (like hazard state update)
+                    # but the game over flag is set.
+                    pass
 
+        # Case 1: Remove the hazard entirely if new_state_name is None
+        if new_state_name is None:
+            logging.info(f"HazardEngine: Removing hazard {hazard_id} ('{hazard['type']}') from {hazard['location']}.")
             del self.active_hazards[hazard_id]
-            # self._remove_environmental_effect_from_hazard(old_state_data_for_removal) # Signal for env recalc
-            self.update_environmental_states() # Recalculate all env states after removal
-            
+            self.update_environmental_states()
             removal_message = hazard['data'].get("removal_message", f"The {hazard.get('object_name', hazard['type'])} is no longer an issue.")
             messages_list.append(color_text(removal_message, "success"))
             return True
 
+        # Case 2: Validate the new state exists
         if new_state_name not in hazard_def_states:
             logging.warning(f"HazardEngine: Attempted to set invalid state '{new_state_name}' for hazard {hazard_id} ('{hazard['type']}'). Valid: {list(hazard_def_states.keys())}")
             return False
 
+        # Case 3: No change needed if already in the target state
         if old_state_name == new_state_name:
             logging.debug(f"HazardEngine: Hazard {hazard_id} already in state '{new_state_name}'. No change.")
-            return True # No change needed, but not an error
+            return True
 
+        # Begin state change process
         logging.info(f"HazardEngine: Hazard {hazard_id} ('{hazard['type']}' at '{hazard['location']}') changing state: '{old_state_name}' -> '{new_state_name}'.")
-
-        # Update hazard instance
         hazard['state'] = new_state_name
         hazard['turns_in_state'] = 0
         new_state_definition = hazard_def_states[new_state_name]
+        self.update_environmental_states()
 
-        # Update overall room environment based on ALL active hazards after this state change
-        self.update_environmental_states() # This is crucial
-
-        # Add description of the new state to messages
+        # Display description of the new state
         desc_template = new_state_definition.get('description')
         if desc_template:
             try:
-                # Use the hazard's specific instance name and support object
                 formatted_desc = desc_template.format(
                     object_name=color_text(hazard.get('object_name', hazard['name']), 'hazard'),
                     support_object=color_text(hazard.get('support_object', 'its surroundings'), 'room')
@@ -1240,27 +1156,25 @@ class HazardEngine:
                 logging.error(f"HazardEngine: KeyError in hazard description format for {hazard['type']}/{new_state_name}: {e}. Template: '{desc_template}'")
                 messages_list.append(color_text(f"The {hazard.get('object_name', hazard['name'])} changes.", "warning"))
 
-        # Player-related effects if player is in the same room as the hazard
+        # Apply effects to player if present in the same room
         player_is_present = self.player.get('location') == hazard['location']
         if player_is_present and not self.game_logic.is_game_over:
-            # Apply direct HP damage specified in the new state definition
+            # Apply HP damage if defined
             hp_damage_on_state_change = new_state_definition.get("instant_hp_damage", 0)
             if hp_damage_on_state_change > 0:
                 damage_source_name = hazard.get('object_name', hazard['name'])
                 self.game_logic.apply_damage_to_player(hp_damage_on_state_change, f"effect from {damage_source_name}")
                 messages_list.append(color_text(f"You take {hp_damage_on_state_change} damage from the {damage_source_name}!", "error"))
-                # game_logic.apply_damage_to_player will set is_game_over if HP <= 0
 
-            # Apply status effect specified in the new state definition
-            status_effect_def = new_state_definition.get("status_effect_on_state_change") # More specific key
+            # Apply status effect if defined
+            status_effect_def = new_state_definition.get("status_effect_on_state_change")
             if status_effect_def and isinstance(status_effect_def, dict) and not self.game_logic.is_game_over:
                 status_name = status_effect_def.get("name")
                 status_duration = status_effect_def.get("duration")
                 if status_name:
-                    # game_logic.apply_status_effect will handle appending its own message if messages_list is passed
                     self.game_logic.apply_status_effect(status_name, status_duration, messages_list)
 
-            # Check for instant death flag in the new state if player is present
+            # Handle instant death if defined
             if new_state_definition.get('instant_death_in_room') and not self.game_logic.is_game_over:
                 death_msg_template = new_state_definition.get('death_message', f"The {hazard.get('object_name', hazard['name'])} escalates fatally!")
                 messages_list.append(color_text(death_msg_template.format(object_name=hazard.get('object_name', 'area')), "error"))
@@ -1270,156 +1184,123 @@ class HazardEngine:
                 self.player['last_hazard_type'] = hazard['type']
                 self.player['last_hazard_object_name'] = hazard.get('object_name', hazard['name'])
                 logging.info(f"HazardEngine: Instant death triggered for player by hazard {hazard_id} ('{hazard['type']}') entering state '{new_state_name}'.")
-                return True # State change occurred, game ended.
+                return True
 
-        # If game ended due to direct effects of this state change, return
+        # Handle special actions defined on state entry (e.g., for MRI door locking/unlocking)
+        # This comes AFTER the state is set and immediate effects are applied
+        if not self.game_logic.is_game_over:
+            special_action_key = new_state_definition.get("on_state_entry_special_action")
+            if special_action_key and hasattr(self.game_logic, special_action_key):
+                self.logger.info(f"HazardEngine: Executing on_state_entry_special_action '{special_action_key}' for hazard {hazard_id} via GameLogic.")
+                action_method_on_gamelogic = getattr(self.game_logic, special_action_key)
+                # Pass relevant info like hazard_id, hazard_instance, messages_list
+                action_method_on_gamelogic(hazard_id=hazard_id, hazard_instance=hazard, messages_list=messages_list)
+                if self.game_logic.is_game_over: # Check if special action ended the game
+                    return True
+            elif special_action_key:
+                self.logger.warning(f"HazardEngine: Unknown on_state_entry_special_action '{special_action_key}' for GameLogic.")
+
         if self.game_logic.is_game_over:
             return True
-
-        # Chain Reaction: Trigger another hazard based on this state change
-        # This logic will be detailed more in Phase 3 (Turn Update) as it's a common part of progression.
-        # For now, a placeholder indicating where it would go.
-        # self._handle_chained_hazard_triggers(hazard, new_state_definition, messages_list)
         
-        return True # State change successful
-        
-    def hazard_turn_update(self):
-        """
-        Processes all active hazards for the current game turn.
-        Handles autonomous state progression, actions, player-seeking, and chain reactions.
-
-        Returns:
-            tuple: (list_of_messages, death_occurred_bool)
-                   A list of messages generated by hazard activities this turn,
-                   and a boolean indicating if any hazard activity resulted in player death.
-        """
-        messages = []
-        # Aggression factor can influence hazard behavior (e.g., chance to progress state)
-        agg_factor = self._calculate_aggression_factor() 
-        logging.debug(f"HazardEngine: --- Hazard Turn Update Start --- Aggression Factor: {agg_factor:.2f}")
-
-        self.processed_hazards_this_turn.clear() # Reset for this turn
-        active_hazard_ids_this_cycle = list(self.active_hazards.keys()) # Iterate over a copy in case of mid-loop modifications
-
-        for hazard_id in active_hazard_ids_this_cycle:
-            if self.game_logic.is_game_over: break # Stop processing if game ended mid-update
-            if hazard_id in self.processed_hazards_this_turn: continue 
-            if hazard_id not in self.active_hazards: continue # Hazard might have been removed by another
-
-            hazard = self.active_hazards[hazard_id]
-            hazard['turns_in_state'] += 1
+        # Handle "sets_room_on_fire" effect
+        if new_state_definition.get('sets_room_on_fire') and not self.game_logic.is_game_over:
+            room_of_fire_hazard = hazard['location']
+            # Check if a 'spreading_fire' hazard already exists in this room
+            existing_room_fire_id = None
+            for active_h_id, active_h_instance in self.active_hazards.items():
+                if active_h_instance.get('type') == self.game_logic.game_data.HAZARD_TYPE_SPREADING_FIRE and \
+                active_h_instance.get('location') == room_of_fire_hazard:
+                    existing_room_fire_id = active_h_id
+                    break
             
-            # Accumulate aggression for the hazard instance if defined
-            hazard_aggression_increase = hazard['data'].get('aggression_per_turn_increase', 0.0)
-            max_hazard_aggression = hazard['data'].get('max_aggression', 5.0) # Max aggression for this specific hazard type
-            hazard['aggression'] = min(hazard.get('aggression', 0) + hazard_aggression_increase, max_hazard_aggression)
-
-            current_state_name = hazard["state"]
-            state_data = hazard["data"]["states"].get(current_state_name)
-            if not state_data:
-                logging.warning(f"HazardEngine: Hazard {hazard_id} ('{hazard['type']}') in unknown state '{current_state_name}'. Skipping update.")
-                continue
-
-            player_is_present = self.player.get('location') == hazard['location']
-
-            # 1. Apply Per-Turn Room Effects (if player is present)
-            if player_is_present and not self.game_logic.is_game_over:
-                self._apply_per_turn_room_effects(hazard_id, hazard, state_data, messages)
-                if self.game_logic.is_game_over: break 
+            if not existing_room_fire_id:
+                messages_list.append(color_text(f"The {hazard.get('object_name', 'fire from ' + hazard['type'])} ignites the surroundings in {room_of_fire_hazard}!", "error"))
+                # Add a new 'spreading_fire' hazard
+                self._add_active_hazard(
+                    hazard_type=self.game_logic.game_data.HAZARD_TYPE_SPREADING_FIRE,
+                    location=room_of_fire_hazard,
+                    initial_state_override="burning_low", # Or determine from intensity of source
+                    target_object_override=f"fire spreading from {hazard.get('object_name', hazard['type'])}", # Descriptive
+                    support_object_override="the room itself"
+                )
+            else:
+                # A spreading_fire already exists. Optionally, escalate its state.
+                existing_fire_hazard = self.active_hazards.get(existing_room_fire_id)
+                if existing_fire_hazard and existing_fire_hazard['state'] == "burning_low":
+                    messages_list.append(color_text(f"The additional flames from {hazard.get('object_name', hazard['type'])} cause the fire in {room_of_fire_hazard} to intensify!", "error"))
+                    self._set_hazard_state(existing_room_fire_id, "burning_high", messages_list)
             
-            # 2. Autonomous Actions defined for the current state
-            autonomous_action_key = state_data.get('autonomous_action')
-            if autonomous_action_key and not self.game_logic.is_game_over:
-                can_run_globally = state_data.get("global_autonomous_action", False) # Action runs even if player not present
-                if player_is_present or can_run_globally:
-                    action_method = getattr(self, f"_{autonomous_action_key}", None) # e.g., _mri_pull_objects
-                    if action_method and callable(action_method):
-                        logging.debug(f"HazardEngine: Executing autonomous action '{autonomous_action_key}' for hazard {hazard_id}.")
-                        action_method(hazard_id, hazard, state_data, messages) # Pass state_data for context
-                    else:
-                        logging.warning(f"HazardEngine: Unknown autonomous_action_key or non-callable method: '{autonomous_action_key}' for hazard {hazard_id}")
-                    if self.game_logic.is_game_over: break
+            # Directly update the room's environment
+            if room_of_fire_hazard in self.room_env:
+                self.room_env[room_of_fire_hazard]['is_on_fire'] = True
+                logging.info(f"HazardEngine: Room '{room_of_fire_hazard}' env directly set to is_on_fire=True due to '{hazard['type']}'.")
+            
+            # Check for immediate gas explosion if gas is present
+            self._check_global_environmental_reactions(messages_list)
+            
+            # If game ended due to effects or explosion, return
+            if self.game_logic.is_game_over:
+                return True
 
-            # 3. Chance to Progress State
-            if "chance_to_progress" in state_data and "next_state" in state_data and not self.game_logic.is_game_over:
-                base_chance = state_data["chance_to_progress"]
-                # Aggression influence can be defined per state
-                aggro_boost_def = state_data.get("aggression_influence", {}).get("chance_to_progress_boost", 0.0)
-                # Use hazard's own accumulated aggression or global aggression factor
-                current_aggression = hazard.get("aggression", agg_factor) 
-                aggro_boost_val = aggro_boost_def * current_aggression
-                
-                actual_chance = min(1.0, max(0.0, base_chance + aggro_boost_val))
-                
-                if random.random() < actual_chance:
-                    logging.debug(f"HazardEngine: Hazard {hazard_id} progressing state due to chance ({actual_chance:.2f}).")
-                    self._set_hazard_state(hazard_id, state_data["next_state"], messages)
-                    if self.game_logic.is_game_over: break
-                    # If state changed, re-fetch current_state_name and state_data for subsequent checks in this turn
-                    if hazard_id in self.active_hazards:
-                        current_state_name = self.active_hazards[hazard_id]["state"]
-                        state_data = self.active_hazards[hazard_id]["data"]["states"].get(current_state_name)
-                        if not state_data: continue # Should not happen if next_state is valid
-                    else: continue # Hazard was removed by state change
+        # Handle room unlocking effect
+        if new_state_definition.get('on_state_entry_unlock_room'):
+            room_to_unlock_name = new_state_definition['on_state_entry_unlock_room']
+            if hasattr(self.game_logic, 'current_level_rooms') and room_to_unlock_name in self.game_logic.current_level_rooms:
+                if self.game_logic.current_level_rooms[room_to_unlock_name].get('locked'):
+                    self.game_logic.current_level_rooms[room_to_unlock_name]['locked'] = False
+                    messages_list.append(color_text(f"You hear a click. The {room_to_unlock_name} door seems to have unlocked!", "success"))
+                    logging.info(f"Hazard {hazard_id} entering state '{new_state_name}' unlocked room '{room_to_unlock_name}'.")
+                else:
+                    messages_list.append(color_text(f"The {room_to_unlock_name} door is now accessible.", "info"))
+            else:
+                logging.warning(f"Hazard {hazard_id} state '{new_state_name}' tried to unlock non-existent or inaccessible room: {room_to_unlock_name}")
 
-            # 4. Chance to Revert State
-            if "chance_to_revert" in state_data and "revert_state" in state_data and not self.game_logic.is_game_over:
-                base_revert_chance = state_data.get("chance_to_revert", 0.05)
-                revert_agg_multiplier = state_data.get("aggression_influence", {}).get("revert_chance_multiplier", 1.0) # 1.0 = no change
-                current_aggression = hazard.get("aggression", agg_factor)
-                effective_revert_chance = base_revert_chance * revert_agg_multiplier 
+        # Handle chained hazard triggers
+        if new_state_definition.get("triggers_hazard_on_state_change") and isinstance(new_state_definition["triggers_hazard_on_state_change"], list):
+            for trigger_rule in new_state_definition["triggers_hazard_on_state_change"]:
+                if not isinstance(trigger_rule, dict): continue
 
-                if random.random() < effective_revert_chance:
-                    revert_msg_template = state_data.get("revert_message", "The {object_name} seems to calm down a bit.")
-                    messages.append(color_text(revert_msg_template.format(object_name=hazard.get('object_name', hazard['type'])), "info"))
-                    self._set_hazard_state(hazard_id, state_data["revert_state"], messages)
-                    if self.game_logic.is_game_over: break
-                    if hazard_id in self.active_hazards: # Re-fetch state if changed
-                        current_state_name = self.active_hazards[hazard_id]["state"]
-                        state_data = self.active_hazards[hazard_id]["data"]["states"].get(current_state_name)
-                        if not state_data: continue
-                    else: continue
+                chance = trigger_rule.get("chance", 1.0)
+                # Add aggression influence on chance if defined
+                agg_influence = trigger_rule.get("aggression_influence_on_chance", 0.0)
+                current_aggression = hazard.get("aggression", self._calculate_aggression_factor())
+                chance += agg_influence * current_aggression
+                chance = min(1.0, max(0.0, chance))
 
-            # 5. Hazard Interactions (hazard affecting another hazard in the same room)
-            if "hazard_interaction" in state_data and isinstance(state_data["hazard_interaction"], dict) and not self.game_logic.is_game_over:
-                self._handle_hazard_to_hazard_interactions(hazard, state_data["hazard_interaction"], agg_factor, messages)
-                if self.game_logic.is_game_over: break 
-                # Re-fetch current hazard's state_data if it changed itself during interaction
-                if hazard_id in self.active_hazards:
-                    current_state_name = self.active_hazards[hazard_id]["state"]
-                    state_data = self.active_hazards[hazard_id]["data"]["states"].get(current_state_name)
-                    if not state_data: continue
-                else: continue
+                if random.random() < chance:
+                    condition_met = True # Assume true unless specific conditions fail
+                    if trigger_rule.get("condition") == "player_in_room" and not player_is_present:
+                        condition_met = False
+                    # Add more specific condition checks if needed
 
-
-            # 6. Autonomous Decay (e.g., fire burning out)
-            # Check for a general 'autonomous_decay' or a more specific one like 'autonomous_decay_to_burnt_out'
-            decay_info = state_data.get("autonomous_decay") 
-            if not decay_info and hazard['type'] == self.game_logic.game_data.HAZARD_TYPE_SPREADING_FIRE: # Example for specific type
-                 decay_info = state_data.get("autonomous_decay_to_burnt_out") # This key is from game_data.py
-
-            if decay_info and isinstance(decay_info, dict) and not self.game_logic.is_game_over:
-                decay_chance = decay_info.get("chance", 0.05)
-                if random.random() < decay_chance:
-                    decay_target_state = decay_info.get("target_state") # Can be None to remove hazard
-                    decay_message_template = decay_info.get("message", "The {object_name} seems to be diminishing.")
-                    messages.append(color_text(decay_message_template.format(object_name=hazard.get('object_name', hazard['type'])), "info"))
-                    self._set_hazard_state(hazard_id, decay_target_state, messages) # _set_hazard_state handles None state (removal)
-                    if self.game_logic.is_game_over: break
-                    if hazard_id not in self.active_hazards: continue # Hazard removed by decay
-
-            self.processed_hazards_this_turn.add(hazard_id)
-
-        # After all individual hazard updates, check for global environmental reactions (e.g., gas explosion from sparks)
-        if not self.game_logic.is_game_over:
-            # _check_global_environmental_reactions will be reviewed in Phase 4
-            self._check_global_environmental_reactions(messages) 
+                    if condition_met:
+                        new_hazard_type = trigger_rule.get("type")
+                        if new_hazard_type:
+                            logging.info(f"HazardEngine: Hazard {hazard_id} ('{hazard['type']}') in state '{new_state_name}' triggering new hazard '{new_hazard_type}'.")
+                            
+                            # Prepare message for triggered hazard
+                            trigger_message_template = trigger_rule.get("trigger_message")
+                            if trigger_message_template:
+                                messages_list.append(color_text(trigger_message_template.format(
+                                    source_name=hazard.get('object_name', hazard['name']),
+                                    # Add other placeholders as needed
+                                ), "warning"))
+                            
+                            self._add_active_hazard(
+                                hazard_type=new_hazard_type,
+                                location=hazard['location'], # Usually same location
+                                initial_state_override=trigger_rule.get("initial_state"),
+                                target_object_override=trigger_rule.get("target_object", trigger_rule.get("object_name_override")),
+                                support_object_override=trigger_rule.get("support_object_override"),
+                                source_trigger_id=hazard_id
+                            )
+                            # Update environment and check for reactions
+                            self.update_environmental_states() 
+                            self._check_global_environmental_reactions(messages_list)
+                            if self.game_logic.is_game_over: return True
         
-        # Consolidate death status from any point in the update
-        death_occurred_this_turn = self.game_logic.is_game_over and not self.game_logic.game_won
-
-        logging.debug(f"HazardEngine: --- Hazard Turn Update End --- Messages: {len(messages)}, Death: {death_occurred_this_turn}")
-        return list(filter(None, messages)), death_occurred_this_turn
+        return True
 
     def _calculate_aggression_factor(self):
         """
@@ -1702,56 +1583,6 @@ class HazardEngine:
                  self._set_hazard_state(hazard_id, state_data["next_state"], messages_list)
         logging.debug(f"HazardEngine: _check_hit_player for {hazard_id} - Player present: {player_is_present}")
 
-    def _mri_pull_objects(self, hazard_id, hazard_instance, state_data, messages_list):
-        """Placeholder for MRI pulling objects in the room or from player."""
-        if self.game_logic.is_game_over: return
-        logging.debug(f"HazardEngine: _mri_pull_objects for {hazard_id} activated.")
-        # This would involve:
-        # 1. Checking player's inventory for metallic items (as in GameLogic._mri_pull_player_items).
-        # 2. Checking the room's defined metallic objects (e.g., from room_data or hazard_instance.data.room_metal_objects).
-        # 3. Applying damage or fatal outcomes based on what's pulled.
-        # For now, refers to the logic that was previously in GameLogic for player items.
-        if hasattr(self.game_logic, '_mri_pull_player_items_logic_for_hazard_engine'): # Hypothetical refactor
-            self.game_logic._mri_pull_player_items_logic_for_hazard_engine(hazard_id, hazard_instance, state_data, messages_list)
-        else: # Fallback or simplified version
-            if self.player.get('location') == hazard_instance['location']:
-                messages_list.append(color_text(f"The {hazard_instance.get('object_name','MRI machine')} hums powerfully, and you feel a strong magnetic pull!", "warning"))
-                # Simplified: check for a generic "metallic_item_in_room" flag or a specific item
-                # This needs more detailed data in game_data.py for room contents.
-
-    def _mri_explosion_countdown(self, hazard_id, hazard_instance, state_data, messages_list):
-        """Handles the MRI explosion countdown."""
-        if self.game_logic.is_game_over: return
-        
-        if 'countdown_turns_remaining' not in hazard_instance: # Initialize countdown
-            hazard_instance['countdown_turns_remaining'] = state_data.get("countdown_turns", 2) # Get from state_data
-            # Initial countdown message should come from the state that *starts* this autonomous action
-            # or the description of the "catastrophic_failure" state itself.
-            # messages_list.append(color_text(state_data.get("countdown_message", "The MRI is about to explode!"), "error"))
-        
-        hazard_instance['countdown_turns_remaining'] -= 1
-        
-        if hazard_instance['countdown_turns_remaining'] > 0:
-            messages_list.append(color_text(f"The {hazard_instance.get('object_name','MRI machine')} whines ominously... meltdown in {hazard_instance['countdown_turns_remaining']}...", "error"))
-        else: # Countdown finished
-            explosion_message = state_data.get("explosion_death_message", # This key is from mri_machine_hazard in game_data
-                                               f"The {hazard_instance.get('object_name','MRI machine')} explodes catastrophically!")
-            messages_list.append(color_text(explosion_message, "error"))
-            
-            player_is_present = self.player.get('location') == hazard_instance['location']
-            # Could also affect adjacent rooms based on explosion_radius_rooms from state_data
-            
-            if player_is_present:
-                self.game_logic.is_game_over = True
-                self.game_logic.game_won = False
-                self.player['last_hazard_type'] = hazard_instance['type']
-                self.player['last_hazard_object_name'] = hazard_instance.get('object_name', hazard_instance['type'])
-            
-            # Set the MRI to its 'exploded' state (or whatever next_state is defined for catastrophic_failure)
-            next_state_after_explosion = state_data.get("next_state", "exploded") # from mri_machine_hazard's catastrophic_failure state
-            self._set_hazard_state(hazard_id, next_state_after_explosion, messages_list)
-        logging.debug(f"HazardEngine: _mri_explosion_countdown for {hazard_id}, turns left: {hazard_instance.get('countdown_turns_remaining', 0)}")
-
     def _check_player_slip(self, hazard_id, hazard_instance, state_data, messages_list):
         """Placeholder for hazards that might cause the player to slip (e.g., water puddle)."""
         if self.game_logic.is_game_over: return
@@ -1980,6 +1811,7 @@ class HazardEngine:
 
         # After updating all rooms based on local hazards, handle inter-room effects like gas spreading
         self._handle_gas_spreading_and_decay()
+
 
 
     def _handle_gas_spreading_and_decay(self):
@@ -2247,8 +2079,6 @@ class HazardEngine:
 
                 for other_h_id, other_h in self.active_hazards.items():
                     if other_h['type'] in seekable_hazard_types:
-                        # Check if this specific hazard state defines specific target states
-                        # For now, just finding the type is enough to head towards it.
                         path_to_other_h = self._get_shortest_path(original_room, other_h['location'])
                         if path_to_other_h and len(path_to_other_h) < shortest_path_len:
                             shortest_path_len = len(path_to_other_h)
@@ -2268,14 +2098,12 @@ class HazardEngine:
                         self._set_hazard_state(hazard_id, state_data['proximity_to_target_next_state'], messages_list)
                         return
 
-
             if not primary_target_sought and (movement_logic == "seek_target_type_then_player" or movement_logic == "seek_player_bfs"):
                 player_seek_chance_base = state_data.get('player_seek_chance', hazard_instance['data'].get('player_seek_chance_if_no_primary_target', 0.1))
                 agg_influence_seek = hazard_instance['data'].get('aggression_influence', {}).get('player_seek_chance_boost', 0.0) * agg_factor
                 if random.random() < (player_seek_chance_base + agg_influence_seek):
                     target_room_for_move = self.player['location']
                     logging.debug(f"Hazard {hazard_id} seeking player, aiming for room: {target_room_for_move}")
-
 
             if target_room_for_move and target_room_for_move != original_room:
                 path = self._get_shortest_path(original_room, target_room_for_move)
@@ -2292,11 +2120,9 @@ class HazardEngine:
                         next_room_candidate = random.choice(possible_next_rooms)
                         logging.debug(f"Hazard {hazard_id} moving randomly to: {next_room_candidate}")
 
-
         # 2. Execute Movement
         if next_room_candidate != original_room:
             hazard_instance['location'] = next_room_candidate
-            # Add movement message (can be generic or from hazard def)
             move_desc = hazard_instance['data'].get('move_description', "The {object_name} moves.")
             messages_list.append(color_text(move_desc.format(object_name=hazard_instance.get('object_name', 'hazard')), "info"))
             logging.info(f"Hazard {hazard_id} ('{hazard_instance['type']}') moved from {original_room} to {next_room_candidate}.")
@@ -2307,7 +2133,7 @@ class HazardEngine:
         # 3a. Collision with Player (if player is in the same room)
         if self.player['location'] == current_room_of_hazard:
             player_collision_rules = hazard_instance['data'].get('collision_effects', {}).get('player', {})
-            if player_collision_rules and random.random() < (player_collision_rules.get('chance', 0.0) + (agg_factor * 0.05)): # Slight agg boost
+            if player_collision_rules and random.random() < (player_collision_rules.get('chance', 0.0) + (agg_factor * 0.05)):
                 effect_type = player_collision_rules.get('effect')
                 collision_msg_template = player_collision_rules.get("message", "The {object_name} collides with you!")
                 messages_list.append(color_text(collision_msg_template.format(object_name=hazard_instance.get('object_name')), "warning"))
@@ -2320,9 +2146,10 @@ class HazardEngine:
                     damage = player_collision_rules.get("hp_damage", 1)
                     self.game_logic.apply_damage_to_player(damage, f"collision with {hazard_instance.get('object_name')}")
                 elif effect_type == 'fatal_collision':
-                    self.game_logic.is_game_over = True; self.game_logic.game_won = False
+                    self.game_logic.is_game_over = True
+                    self.game_logic.game_won = False
                     self.player['last_hazard_type'] = hazard_instance['type']
-                    self.player['last_hazard_object_name'] = hazard_instance.get('object_name')
+                    self.player['last_hazard_object_name'] = hazard_instance.get('object_name', 'mobile hazard')
                     messages_list.append(color_text(player_collision_rules.get("fatal_message", "The collision is fatal!"), "error"))
                     return # Game over
 
@@ -2336,29 +2163,26 @@ class HazardEngine:
             if other_h_id == hazard_id or other_h_instance['location'] != current_room_of_hazard:
                 continue
 
-            # Check if other_h_instance.type is in defined_collision_targets for the moving hazard
             target_type_for_collision_rules = None
-            if other_h_instance['type'] in defined_collision_targets: # e.g., "loose_object"
+            if other_h_instance['type'] in defined_collision_targets:
                 target_type_for_collision_rules = other_h_instance['type']
-            # Could add more complex matching here if needed (e.g. based on object names)
 
             if target_type_for_collision_rules:
                 collision_rule_for_type = hazard_instance['data'].get('collision_effects', {}).get(target_type_for_collision_rules)
                 if collision_rule_for_type and random.random() < (collision_rule_for_type.get('chance', 0.0) + (agg_factor * 0.05)):
                     collision_effect = collision_rule_for_type.get('effect')
-                    effect_msg_template = collision_rule_for_type.get("message", "The {object_name} bumps into the {target_object_name}!")
+                    effect_msg_template = collision_rule_for_type.get("message", "The {object_name} bumps {target_object_name}!")
                     messages_list.append(color_text(effect_msg_template.format(
                         object_name=hazard_instance.get('object_name'),
                         target_object_name=other_h_instance.get('object_name')
                     ), "info"))
-                    logging.info(f"Hazard {hazard_id} collided with {other_h_id} ({target_type_for_collision_rules}). Effect: {collision_effect}")
+                    logging.info(f"Hazard {hazard_id} collided with {other_h_id}. Effect: {collision_effect}")
 
-                    if collision_effect == "knock_over": # Example effect
+                    if collision_effect == "knock_over":
                         target_hazard_new_state = collision_rule_for_type.get("target_hazard_state")
                         if target_hazard_new_state:
                             self._set_hazard_state(other_h_id, target_hazard_new_state, messages_list)
                             if self.game_logic.is_game_over: return
-                    # Add more collision effects here (e.g., 'damage_target_hazard', 'destroy_target_hazard')
 
     def get_room_hazards_descriptions(self, room_name):
         descriptions = []
@@ -2386,16 +2210,7 @@ class HazardEngine:
         """Alias for get_room_hazards_descriptions."""
         return self.get_room_hazards_descriptions(room_name)
 
-    def _add_to_journal(self, category, entry): # Proxy method
-        """
-        Adds an entry to the player's journal via the GameLogic instance.
-        (This is a proxy method; actual journal logic is in GameLogic or AchievementsSystem)
-        """
-        if self.game_logic and hasattr(self.game_logic, '_add_to_journal'):
-            return self.game_logic._add_to_journal(category, entry)
-        logging.warning("HazardEngine: _add_to_journal called, but game_logic or its _add_to_journal method is unavailable.")
-        return False
-        
+
     # --- Persistence Methods ---
 
     def save_state(self):
@@ -2477,6 +2292,197 @@ class HazardEngine:
         # Consider if GameLogic needs to append a message about the effect.
         return messages_to_return
 
+    def _mri_qte_projectile_action(self, hazard_id, hazard_instance, state_data, messages_list):
+        """Handles triggering a QTE for the MRI metal shower sequence (or any projectile QTE)."""
+        if self.game_logic.is_game_over: return
+
+        player_location = self.game_logic.player.get('location')
+        if player_location != hazard_instance['location']:
+            # Player not in the room, projectile misses or hits elsewhere.
+            messages_list.append(color_text(f"You hear a deafening crash from the {hazard_instance['location']}!", "warning"))
+            # Hazard should still progress its state
+            next_state = state_data.get("next_state_after_qte")
+            if next_state:
+                # If player not present, QTE "succeeds" by default for hazard progression
+                logging.info(f"MRI QTE: Player not in room. Hazard {hazard_id} progressing to {next_state}.")
+                self._set_hazard_state(hazard_id, next_state, messages_list)
+            return
+
+        # Player IS in the MRI Scan Room / Hazard's Location
+        qte_projectile_name = state_data.get("qte_projectile_name", "a metallic object")
+        qte_type_to_trigger = state_data.get("qte_type", self.game_logic.game_data.QTE_TYPE_DODGE_PROJECTILE)
+        qte_duration = state_data.get("qte_duration", 3.0)
+        damage_on_fail = state_data.get("damage_on_qte_fail", 5)
+        
+        # Base prompt from hazard state description or a specific QTE prompt key
+        base_prompt = state_data.get("description", f"A {qte_projectile_name} flies towards you!") 
+        
+        qte_master_def = self.game_logic.game_data.qte_definitions.get(qte_type_to_trigger, {})
+        expected_word = "dodge" # Default
+        if qte_master_def.get("valid_responses") and len(qte_master_def["valid_responses"]) > 0:
+            expected_word = qte_master_def["valid_responses"][0].lower()
+
+        # Construct the UI prompt, incorporating the expected word for clarity if desired
+        ui_qte_prompt_for_popup = base_prompt # The QTEPopup will add the "Type 'WORD'..." part
+
+        qte_context_for_game_logic = {
+            "ui_prompt_message": ui_qte_prompt_for_popup, 
+            "expected_input_word": expected_word, 
+            "input_type": "word", # Assuming word input for dodge
+            "success_message": f"You narrowly DODGE the incoming {qte_projectile_name}!",
+            "failure_message_wrong_input": f"Wrong input! The {qte_projectile_name} slams into you!", 
+            "timeout_message": f"Too slow! The {qte_projectile_name} hits you!", 
+            "hp_damage_on_failure": damage_on_fail,
+            "is_fatal_on_failure": state_data.get("is_fatal_on_failure", False),
+            "qte_source_hazard_id": hazard_id,
+            "qte_source_hazard_state": hazard_instance['state'], # Current state that triggered this
+            "next_state_after_qte_success": state_data.get("next_state_after_qte"), 
+            "next_state_after_qte_failure": state_data.get("next_state_after_qte"),
+            "is_mri_projectile_qte": True, # Flag for GameLogic to handle MRI specific failure counts
+            "qte_projectile_name": qte_projectile_name # For specific death messages
+        }
+
+        if self.game_logic and hasattr(self.game_logic, 'trigger_qte'):
+            self.game_logic.trigger_qte(qte_type_to_trigger, qte_duration, qte_context_for_game_logic)
+            # The hazard turn update will pause for this hazard until the QTE is resolved by GameLogic.
+            # GameLogic._handle_qte_response will then call _set_hazard_state to progress.
+        else:
+            logging.error("HazardEngine: GameLogic or trigger_qte not found for MRI QTE!")
+            messages_list.append(color_text(f"The {qte_projectile_name} hits you (system error initiating QTE)!", "error"))
+            self.game_logic.apply_damage_to_player(damage_on_fail, f"undodged {qte_projectile_name} from MRI (QTE sys err)")
+            
+            # Handle MRI QTE failure count directly if QTE system fails to init
+            self.game_logic.player['mri_qte_failures'] = self.game_logic.player.get('mri_qte_failures', 0) + 1
+            if self.game_logic.player['mri_qte_failures'] >= self.game_logic.game_data.MAX_MRI_QTE_FAILURES:
+                self.game_logic.is_game_over = True; self.game_logic.game_won = False
+                self.game_logic.player['last_death_message'] = self.game_logic.game_data.GAME_OVER_MRI_DEATH.format(
+                    object_description=qte_projectile_name, impact_result="fatally wounding you (QTE system error)")
+            
+            # Still try to progress the hazard state
+            if hazard_id in self.active_hazards:
+                next_state_on_sys_fail = state_data.get("next_state_after_qte", "shorted_out") # Default to a safe-ish state
+                self._set_hazard_state(hazard_id, next_state_on_sys_fail, messages_list)
+
+    def _mri_explosion_countdown(self, hazard_id, hazard_instance, state_data, messages_list):
+        """Handles the MRI explosion countdown."""
+        if self.game_logic.is_game_over: return
+        
+        if 'countdown_turns_remaining' not in hazard_instance: # Initialize countdown
+            hazard_instance['countdown_turns_remaining'] = state_data.get("countdown_turns", 2) # Get from state_data
+            # Initial countdown message should come from the state that *starts* this autonomous action
+            # or the description of the "catastrophic_failure" state itself.
+            # messages_list.append(color_text(state_data.get("countdown_message", "The MRI is about to explode!"), "error"))
+        
+        hazard_instance['countdown_turns_remaining'] -= 1
+        
+        if hazard_instance['countdown_turns_remaining'] > 0:
+            messages_list.append(color_text(f"The {hazard_instance.get('object_name','MRI machine')} whines ominously... meltdown in {hazard_instance['countdown_turns_remaining']}...", "error"))
+        else: # Countdown finished
+            explosion_message = state_data.get("explosion_death_message", # This key is from mri_machine_hazard in game_data
+                                               f"The {hazard_instance.get('object_name','MRI machine')} explodes catastrophically!")
+            messages_list.append(color_text(explosion_message, "error"))
+            
+            player_is_present = self.player.get('location') == hazard_instance['location']
+            # Could also affect adjacent rooms based on explosion_radius_rooms from state_data
+            
+            if player_is_present:
+                self.game_logic.is_game_over = True
+                self.game_logic.game_won = False
+                self.player['last_hazard_type'] = hazard_instance['type']
+                self.player['last_hazard_object_name'] = hazard_instance.get('object_name', hazard_instance['type'])
+            
+            # Set the MRI to its 'exploded' state (or whatever next_state is defined for catastrophic_failure)
+            next_state_after_explosion = state_data.get("next_state", "exploded") # from mri_machine_hazard's catastrophic_failure state
+            self._set_hazard_state(hazard_id, next_state_after_explosion, messages_list)
+        logging.debug(f"HazardEngine: _mri_explosion_countdown for {hazard_id}, turns left: {hazard_instance.get('countdown_turns_remaining', 0)}")
+
+
+    def _mri_explosion_countdown(self, hazard_id, hazard, state_data, messages_list):
+        """Handles MRI explosion countdown."""
+        # (Simplified logic for brevity - countdown, explosion effect)
+        if self.game_logic.is_game_over: return
+        if 'countdown_turns_remaining' not in hazard:
+            hazard['countdown_turns_remaining'] = state_data.get("countdown_turns", 2)
+        hazard['countdown_turns_remaining'] -= 1
+        if hazard['countdown_turns_remaining'] > 0:
+            messages_list.append(color_text(f"MRI whines... meltdown in {hazard['countdown_turns_remaining']}...", "error"))
+        else:
+            messages_list.append(color_text(state_data.get("explosion_death_message", "MRI explodes!"), "error"))
+            if self.player.get('location') == hazard['location']:
+                self.game_logic.is_game_over = True; self.game_logic.game_won = False
+                self.player['last_hazard_type'] = hazard['type']; self.player['last_hazard_object_name'] = hazard.get('object_name', hazard['type'])
+            self._set_hazard_state(hazard_id, state_data.get("next_state", "exploded"), messages_list)
+
+
+    def _mri_pull_through_window(self, hazard_id, hazard_instance, state_data, messages_list):
+        """
+        Handles the MRI pulling objects through the observation window,
+        targeting the player if they are in the MRI Control Room.
+        Triggers a QTE.
+        """
+        if self.game_logic.is_game_over:
+            return
+
+        # This hazard is in the MRI Scan Room, but its effect targets the MRI Control Room.
+        # Room names are defined as constants in game_data.py
+        mri_control_room_name = "MRI Control Room" # Assuming this is the exact name from game_data.rooms
+
+        player_location = self.player.get('location')
+
+        if player_location != mri_control_room_name:
+            # Player is not in the control room, so they are not directly targeted by this specific action.
+            # The hazard might still progress its state or have other environmental effects.
+            messages_list.append(color_text(f"From the {mri_control_room_name}, you hear a tremendous crash and the sound of shattering glass as the {hazard_instance.get('object_name', 'MRI')} malfunctions further!", "warning"))
+            # Progress the hazard to its next state as defined in game_data
+            next_state_after_pull = state_data.get("next_state_on_qte_resolved") # Or a generic next_state if no QTE was meant for others
+            if next_state_after_pull:
+                self._set_hazard_state(hazard_id, next_state_after_pull, messages_list)
+            return
+
+        # Player IS in the MRI Control Room
+        object_pulled_desc = state_data.get("object_type_pulled", "metallic debris")
+        qte_type = state_data.get("qte_type_to_trigger", game_data.QTE_TYPE_DODGE_PROJECTILE) #
+        qte_duration = state_data.get("qte_duration", 3.0)
+        damage_on_fail = state_data.get("damage_on_qte_fail", 5)
+        is_fatal_on_fail = state_data.get("fatal_on_qte_fail", False)
+        next_state = state_data.get("next_state_on_qte_resolved", "mri_field_collapsed") # Default next state after sequence
+
+        # Formulate the QTE prompt message
+        qte_prompt_message = (
+            f"The observation window explodes inwards! {object_pulled_desc.capitalize()} "
+            f"erupts from the MRI Scan Room, flying straight at you!\n"
+            f"Type \"{self.game_logic.game_data.QTE_RESPONSE_DODGE.upper()}\" to dodge! ({qte_duration}s)"
+        )
+        messages_list.append(color_text(qte_prompt_message, "hazard"))
+
+        # Trigger QTE via GameLogic
+        # GameLogic will handle the actual timer and response processing.
+        # The HazardEngine sets up the parameters for the QTE.
+        qte_context_for_game_logic = {
+            "success_message": f"You narrowly DODGE the incoming {object_pulled_desc}!",
+            "failure_message": f"The {object_pulled_desc} slams into you with brutal force!",
+            "hp_damage_on_failure": damage_on_fail,
+            "is_fatal_on_failure": is_fatal_on_fail,
+            "on_success_hazard_id_to_progress": hazard_id, # For HazardEngine to know which hazard to update after QTE
+            "on_failure_hazard_id_to_progress": hazard_id,
+            "next_state_for_hazard": next_state,
+            "qte_source_hazard_id": hazard_id, # Identify the hazard triggering it
+            "qte_source_hazard_state": hazard_instance['state'] # Current state that triggered
+        }
+
+        if self.game_logic and hasattr(self.game_logic, 'trigger_qte'):
+            self.game_logic.trigger_qte(qte_type, qte_duration, qte_context_for_game_logic)
+        else:
+            logging.error("HazardEngine: GameLogic reference or trigger_qte method not found!")
+            # Fallback: if no QTE, assume failure for this dangerous event
+            messages_list.append(color_text(f"The {object_pulled_desc} hits you as the system couldn't initiate a dodge sequence!", "error"))
+            if is_fatal_on_fail:
+                self.game_logic.apply_damage_to_player(999, f"undodged {object_pulled_desc} from MRI") # Ensure death
+            else:
+                self.game_logic.apply_damage_to_player(damage_on_fail, f"hit by {object_pulled_desc} from MRI")
+            if hazard_id in self.active_hazards: # Check if hazard still exists
+                 self._set_hazard_state(hazard_id, next_state, messages_list)
+
     def load_state(self, state_dict):
         """
         Restores the HazardEngine's state from a previously saved dictionary.
@@ -2503,11 +2509,19 @@ class HazardEngine:
 
         self.next_hazard_id = state_dict.get("next_hazard_id", self.next_hazard_id) # Use loaded or current if missing
         
+        # Load temporary room effects
+        self.temporary_room_effects = copy.deepcopy(state_dict.get("temporary_room_effects", []))
+        
+        # Ensure room_env reflects active temporary effects upon load
+        for effect in self.temporary_room_effects:
+            if effect['room'] in self.room_env and effect['key'] in self.room_env[effect['room']]:
+                self.room_env[effect['room']][effect['key']] = effect['temp_value']
+        
         # Ensure all loaded hazard instances have their 'data' field properly linked or copied
         # (deepcopy in save_state should handle this, but a check could be added if issues arise)
         # for hz_id, hz_instance in self.active_hazards.items():
         #    if 'data' not in hz_instance and hz_instance.get('type') in self.hazards_master_data:
         #        hz_instance['data'] = copy.deepcopy(self.hazards_master_data[hz_instance['type']])
 
-        logging.info(f"HazardEngine state loaded. Active hazards: {len(self.active_hazards)}. Next ID: {self.next_hazard_id}")
-
+        logging.info(f"HazardEngine state loaded. Active hazards: {len(self.active_hazards)}. Temp Effects: {len(self.temporary_room_effects)}. Next ID: {self.next_hazard_id}")
+        

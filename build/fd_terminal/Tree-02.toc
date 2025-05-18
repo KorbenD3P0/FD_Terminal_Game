@@ -1,0 +1,7 @@
+('C:\\Users\\korbe\\OneDrive\\Documents\\GitHub\\FD_Terminal_Game\\mygame_env\\share\\glew\\bin',
+ None,
+ [],
+ 'DATA',
+ [('glew32.dll',
+   'C:\\Users\\korbe\\OneDrive\\Documents\\GitHub\\FD_Terminal_Game\\mygame_env\\share\\glew\\bin\\glew32.dll',
+   'DATA')])

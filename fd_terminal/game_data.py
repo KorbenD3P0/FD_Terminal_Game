@@ -4,7 +4,16 @@ import logging
 import copy
 
 # Items that are fixed and should not be dynamically placed by the general random placement logic
-FIXED_ITEMS_DYNAMIC_EXCLUSION = ["Newspaper Clipping", "Bloody Brick", "toolbelt", "Coroner's Office Key"]
+FIXED_ITEMS_DYNAMIC_EXCLUSION = [
+    "Newspaper Clipping", 
+    "Bludworth's House Key", 
+    "Bloody Brick", 
+    "toolbelt", 
+    "Coroner's Office Key", # Add the key here to ensure its specific placement is respected
+    "Radiology Key Card",
+    "Morgue Key Card",
+    # Medical Director Key Card will be handled by random hospital container logic
+]
 
 # --- Existing Constants ---
 DEFAULT_ITEM_WEIGHT = 1 #
@@ -54,6 +63,9 @@ ROOM_LIVING_ROOM = "Living Room" #
 ROOM_ATTIC = "Attic" #
 ROOM_KITCHEN = "Kitchen" #
 ROOM_HOSPITAL_EMERGENCY_ENTRANCE = "Hospital Emergency Entrance" #
+ROOM_MORGUE = "Morgue Autopsy Suite" #
+ROOM_MRI_CONTROL_ROOM = "MRI Control Room" #
+ROOM_STAIRWELL = "Stairwell" #
 
 # Hazard Type Identifiers (these are keys in the hazards dictionary)
 HAZARD_TYPE_WEAK_FLOORBOARDS = "weak_floorboards" #
@@ -73,18 +85,22 @@ HAZARD_STATE_HEAVY_LEAK = "heavy_leak" #
 HAZARD_STATE_BURNT_OUT_HULK = "burnt_out_hulk" #
 HAZARD_STATE_SHORTED_OUT = "shorted_out" #
 
-# --- QTE Constants ---
 QTE_TYPE_DODGE_WRECKING_BALL = "dodge_wrecking_ball"
 QTE_TYPE_GENERIC_DODGE = "dodge"
 QTE_TYPE_CLIMB = "climb"
 QTE_TYPE_BALANCE = "balance"
 QTE_TYPE_RUN = "run"
-QTE_TYPE_DIFFUSE = "diffuse" # Assuming you might have generic diffusion QTEs
+QTE_TYPE_DIFFUSE = "diffuse" 
 QTE_TYPE_DODGE_PROJECTILE = "dodge_projectile"
+QTE_TYPE_BUTTON_MASH = "button_mash_qte"
+QTE_TYPE_SEQUENCE_INPUT = "sequence_input_qte"
+GAME_OVER_MRI_DEATH = "The malfunctioning MRI machine turned the room into a deadly vortex of metal. {object_description} slammed into you with horrific force, {impact_result}. Your attempt to force the door ended in a gruesome demise."
+MAX_MRI_QTE_FAILURES = 2 
+STAIRWELL_DOOR_FORCE_THRESHOLD = 2 
 
 # QTE Responses (player inputs)
-QTE_RESPONSE_DODGE = "dodge" # For GameLogic
-QTE_RESPONSE_DODGE_EXCLAMATION = "dodge!" # For UI input check
+QTE_RESPONSE_DODGE = "dodge" 
+QTE_RESPONSE_DODGE_EXCLAMATION = "dodge!" 
 QTE_RESPONSE_JUMP = "jump"
 QTE_RESPONSE_CLIMB = "climb"
 QTE_RESPONSE_PULL = "pull"
@@ -95,7 +111,7 @@ QTE_RESPONSE_STABILIZE = "stabilize"
 QTE_RESPONSE_RUN = "run"
 QTE_RESPONSE_SPRINT = "sprint"
 QTE_RESPONSE_FLEE = "flee"
-QTE_RESPONSE_CUT_WIRE = "cut" # Example for a diffuse QTE
+QTE_RESPONSE_CUT_WIRE = "cut" 
 QTE_RESPONSE_SNIP_WIRE = "snip"
 
 QTE_DEFAULT_DURATION = 5 # General default duration in seconds
@@ -124,6 +140,19 @@ JOURNAL_CATEGORY_HAZARDS_ENCOUNTERED = "Hazards Encountered"
 # --- Internal Game Signals ---
 SIGNAL_QTE_TIMEOUT = "INTERNAL_QTE_TIMEOUT_FAILURE_SIGNAL" #
 
+GAME_OVER_MRI_DEATH = "The malfunctioning MRI machine turned the room into a deadly vortex of metal. {object_description} slams into you with horrific force, {impact_result}. Your attempt to force the door ended in a gruesome demise."
+MAX_MRI_QTE_FAILURES = 2 # Player dies on the second failure
+STAIRWELL_DOOR_FORCE_THRESHOLD = 2 # Number of force attempts to open the Stairwell door
+
+# Player Action Verbs (ensure ACTION_FORCE is defined if not already)
+ACTION_FORCE = "force"
+ACTION_BREAK = "break" # Assuming break is also used/defined
+QTE_TYPE_DODGE_PROJECTILE = "dodge_projectile" # Ensure this is defined for MRI QTEs
+
+# Hazard Type Identifiers
+HAZARD_TYPE_MRI = "mri_machine_hazard" # Ensure this is defined for MRI hazard
+
+
 # --- UI Screen Names (Mainly for UI logic, but if GameLogic needs to make decisions based on them)
 SCREEN_TITLE = "title" #
 SCREEN_INTRO = "intro" #
@@ -140,7 +169,7 @@ SCREEN_TUTORIAL = "tutorial" #
 # --- Level Configuration ---
 LEVEL_REQUIREMENTS = {
     1: { # Formerly Hospital (Level 2 data)
-        "name": "Lakeview Hospital",
+        "name": "Hope River Hospital",
         "evidence_needed": ["Bludworth's House Key"], # Player must find this key to "complete" the hospital
         "entry_room": "Hospital Emergency Entrance",
         "exit_room": "Hospital Morgue Exit", # Player exits here to go to Bludworth's House
@@ -160,43 +189,11 @@ LEVEL_REQUIREMENTS = {
 }
 
 CHARACTER_CLASSES = {
-    "Journalist": {
-        "max_hp": 10,
-        "perception": 1,
-        "intuition": 1,
-        "description": "Balanced. No special bonuses.",
-        "observations" : {
-            "inter_level_thought": "I can't shake the feeling that something terrible is about to happen. I need to stay alert.",
-        }
-    },
-    "EMT": {
-        "max_hp": 14,  # More health
-        "perception": 1,
-        "intuition": 1,
-        "description": "More base health.",
-        "observations" : {
-            "inter_level_thought": "I can feel the adrenaline coursing through my veins. This is what I was trained for, and now I'll use my skills to keep myself alive.",
-        }
-    },
-    "Detective": {
-        "max_hp": 10,
-        "perception": 3,  # More likely to spot hidden things
-        "intuition": 1,
-        "description": "Higher perception for finding clues/hazards.",
-        "observations" : {
-            "inter_level_thought": "The pattern is becoming clear; I can feel it in my gut. This isn't just a coincidence.",
-        }
-    },
-    "Medium": {
-        "max_hp": 10,
-        "perception": 1,
-        "intuition": 3,  # More likely to sense danger or get warnings
-        "description": "Higher intuition for hazard warnings.",
-        "observations" : {
-            "inter_level_thought": "Why do I feel like I'm being watched? Something's not right here.",
-            }
-        }
-    }
+    "Journalist": {"max_hp": 10, "perception": 1, "intuition": 1, "description": "Balanced. No special bonuses.", "observations": {"inter_level_thought": "I can't shake the feeling that something terrible is about to happen. I need to stay alert."}},
+    "EMT": {"max_hp": 14, "perception": 1, "intuition": 1, "description": "More base health.", "observations": {"inter_level_thought": "I can feel the adrenaline coursing through my veins. This is what I was trained for, and now I'll use my skills to keep myself alive."}},
+    "Detective": {"max_hp": 10, "perception": 3, "intuition": 1, "description": "Higher perception for finding clues/hazards.", "observations": {"inter_level_thought": "The pattern is becoming clear; I can feel it in my gut. This isn't just a coincidence."}},
+    "Medium": {"max_hp": 10, "perception": 1, "intuition": 3, "description": "Higher intuition for hazard warnings.", "observations": {"inter_level_thought": "Why do I feel like I'm being watched? Something's not right here."}}
+}
 
 qte_definitions = {
     # ... (existing QTEs like QTE_TYPE_DODGE_WRECKING_BALL if you formalize them here) ...
@@ -208,8 +205,35 @@ qte_definitions = {
         "success_message_default": "You deftly sidestep the flying object!",
         "failure_message_default": "You're too slow! The object slams into you.",
         "hp_damage_on_failure": 5 # Default damage if not fatal (can be overridden by context)
+    },
+        QTE_TYPE_DODGE_PROJECTILE: {
+        "name": "Dodge Projectile",
+        "valid_responses": [QTE_RESPONSE_DODGE, QTE_RESPONSE_DODGE_EXCLAMATION],
+        "default_duration": 3,
+        "score_on_success": SCORE_QTE_SUCCESS,
+        "success_message_default": "You deftly sidestep the flying object!",
+        "failure_message_default": "You're too slow! The object slams into you.",
+        "hp_damage_on_failure": 5
+    },
+    QTE_TYPE_BUTTON_MASH: {
+        "name": "Rapid Interaction",
+        "default_duration": 5.0, # Time to complete the mashing
+        "target_mash_count": 10, # How many "mashes" needed
+        "score_on_success": SCORE_QTE_SUCCESS,
+        "success_message_default": "You managed to interact rapidly enough!",
+        "failure_message_default": "Not fast enough!",
+        "hp_damage_on_failure": 2
+    },
+    QTE_TYPE_SEQUENCE_INPUT: {
+        "name": "Command Sequence",
+        "default_duration": 7.0, # Time to type the sequence
+        "score_on_success": SCORE_QTE_COMPLEX_SUCCESS,
+        "success_message_default": "Sequence input correct!",
+        "failure_message_default": "Incorrect sequence or too slow!",
+        "hp_damage_on_failure": 3
     }
 }
+
 disasters = {
     "a plane whose wing broke off mid-air and": {
         "description": "You were seconds from boarding the flight when {visionary}, their face slick with sweat, seized your arm, their grip like a vice, and rasped, '{warning}' You listen, for some reason, and later watch the plane's wing detach during takeoff, shearing the plane's back half in two. Reports indicate there were {killed_count} people killed in this disaster. Those who initially survived were killed in increasingly bizarre ways, like being {survivor_fates}.",
@@ -673,26 +697,69 @@ survivor_fates = [
 # --- Furniture Definitions ---
 # Types of furniture for categorization
 room_furniture = {
-    "general": ["dusty table", "floor", "worn armchair", "tattered sofa", "old trunk", "cabinet", "dining table", "cupboard"],
-    "bedroom": ["four-poster bed", "floor", "nightstand", "large desk", "dresser", "single bed", "cluttered desk"],
-    "library": ["bookshelves", "floor", "large desk"],
-    "kitchen": ["kitchen counter", "floor", "shelves", "trash can", "dirty sink"], # Added kitchen counter
-    "bathroom": ["medicine cabinet", "floor", "stained bathtub", "dirty sink", "toilet"], # Added toilet
-    "basement": ["workbench", "shelves", "floor", "old trunk", "cabinet"],
-    "attic": ["crate", "floor", "stack of old boxes", "old trunk"],
-    "porch": ["broken rocking chair"],
-    "front porch": ["broken rocking chair"],
-    "foyer" : ["dusty table", "floor", "worn armchair", "tattered sofa", "old trunk", "cabinet", "coat rack"], # Added coat rack
-    "hallway": ["small table", "coat rack"] # Added hallway furniture
+    "general": [
+        "dusty table", "floor", "worn armchair", "tattered sofa", "old trunk", "cabinet", "dining table", "cupboard"
+    ],
+    "bedroom": [
+        "four-poster bed", "floor", "nightstand", "large desk", "dresser", "single bed", "cluttered desk"
+    ],
+    "library": [
+        "bookshelves", "floor", "large desk"
+    ],
+    "kitchen": [
+        "kitchen counter", "floor", "shelves", "trash can", "dirty sink"
+    ],
+    "bathroom": [
+        "medicine cabinet", "floor", "stained bathtub", "dirty sink", "toilet"
+    ],
+    "basement": [
+        "workbench", "shelves", "floor", "old trunk", "cabinet"
+    ],
+    "attic": [
+        "crate", "floor", "stack of old boxes", "old trunk"
+    ],
+    "porch": [
+        "broken rocking chair"
+    ],
+    "front porch": [
+        "broken rocking chair"
+    ],
+    "foyer": [
+        "dusty table", "floor", "worn armchair", "tattered sofa", "old trunk", "cabinet", "coat rack"
+    ],
+    "hallway": [
+        "small table", "coat rack"
+    ],
+    # --- Hospital-specific furniture containers ---
+    "hospital": [
+        "reception desk",         # Hospital Emergency Entrance
+        "low table",              # Waiting Room
+        "hospital bed",           # Patient Room 101
+        "bedside table",          # Patient Room 101
+        "metal shelves",          # Supply Closet
+        "control desk",           # MRI Control Room
+        "equipment cart",         # MRI Scan Room
+        "instrument cabinet",     # Morgue Autopsy Suite
+        "mahogany desk",          # Coroner's Office
+        "bookshelves"             # Coroner's Office (already in library, but included for hospital context)
+    ]
 }
 
+# --- Room Name Constants ---
+ROOM_MRI_SCAN_ROOM = "MRI Scan Room"
+ROOM_MRI_CONTROL_ROOM = "MRI Control Room"
+ROOM_RADIOLOGY_WING_ACCESS = "Radiology Wing Access"
+ROOM_STAIRWELL = "Stairwell"
+ROOM_MORGUE = "Morgue"
+
 rooms = {
-    1: {  # Level 2, Hope River Hospital
+    1: {
         "Hospital Emergency Entrance": {
             "description": "Automatic doors slide open into a brightly lit, sterile reception area. The smell of antiseptic is overwhelming. Empty chairs line the walls of the waiting room. A large, unattended reception desk sits under a flickering fluorescent light. It's eerily quiet.", 
             "exits": {"north": "ER Hallway", "west": "Waiting Room"}, 
+            "floor": 1,
             "objects": ["flickering fluorescent light", "empty chairs"], 
-            "furniture": [{"name": "reception desk", "is_container": True, "locked": False, "capacity": 3}], 
+            "furniture": [{"name": "reception desk", "is_container": True, "locked": False, "capacity": 3, "possible_items": ["Radiology Key Card"]}], 
             "items_present": [], 
             "hazards_present": [{"type": "faulty_wiring", "chance": 0.1, "object_name_override": "flickering light fixture", "support_object_override": "ceiling"}], 
             "possible_hazards": [{"type": "short_circuiting_appliance", "chance": 0.05, "object_name_options": ["computer monitor on desk"], "support_object_override": "reception desk"}], 
@@ -708,11 +775,9 @@ rooms = {
         "Waiting Room": {
             "description": "A large waiting area with rows of uncomfortable plastic chairs. Old magazines are scattered on a low table. A wall-mounted TV displays static. The room feels cold and unwelcoming.", 
             "exits": {"east": "Hospital Emergency Entrance"}, 
+            "floor": 1,
             "objects": ["wall-mounted TV showing static", "scattered old magazines"], 
-            "furniture": [ 
-                {"name": "plastic chairs", "is_container": False, "locked": False}, 
-                {"name": "low table", "is_container": True, "locked": False, "capacity": 2} 
-            ],
+            "furniture": [{"name": "plastic chairs"}, {"name": "low table", "is_container": True, "locked": False, "capacity": 2, "possible_items": ["Radiology Key Card"]}],
             "items_present": [], 
             "hazards_present": [], 
             "possible_hazards": [{"type": "precarious_object", "chance": 0.1, "object_name_options": ["loose ceiling panel"], "support_object_override": "ceiling"}], 
@@ -727,7 +792,7 @@ rooms = {
         },
         "ER Hallway": {
             "description": "A long, sterile hallway stretches before you. Doors line either side, labeled with room numbers and department names. The floor is polished linoleum, reflecting the harsh overhead lights. A gurney is parked haphazardly against one wall.", 
-            "exits": {"south": "Hospital Emergency Entrance", "north": "Patient Room 101", "east": "Radiology Wing Access", "west": "Supply Closet"}, 
+            "exits": {"south": "Hospital Emergency Entrance", "north": "Patient Room 101", "east": ROOM_RADIOLOGY_WING_ACCESS, "west": "Supply Closet"},
             "objects": ["gurney"], 
             "furniture": [], 
             "items_present": [], 
@@ -743,11 +808,9 @@ rooms = {
         "Patient Room 101": {
             "description": "A typical hospital room. A single bed with crisp white sheets sits against one wall, an IV stand beside it. A small bedside table and a chair are the only other furnishings. The window looks out onto a brick wall.", 
             "exits": {"south": "ER Hallway"}, 
+            "floor": 1,
             "objects": ["IV stand", "window overlooking brick wall"], 
-            "furniture": [ 
-                {"name": "hospital bed", "is_container": True, "locked": False, "capacity": 1}, 
-                {"name": "bedside table", "is_container": True, "locked": False, "capacity": 1} 
-            ],
+            "furniture": [{"name": "hospital bed", "is_container": True}, {"name": "bedside table", "is_container": True, "possible_items": ["Radiology Key Card"]}],
             "items_present": [], 
             "hazards_present": [], 
             "possible_hazards": [{"type": "contaminated_waste", "chance": 0.1, "object_name_options": ["sharps container"], "support_object_override": "bedside table"}], 
@@ -763,8 +826,9 @@ rooms = {
         "Supply Closet": {
             "description": "A cramped closet filled with shelves stacked high with medical supplies: bandages, syringes, bottles of solution. It smells strongly of disinfectant.", 
             "exits": {"east": "ER Hallway"}, 
+            "floor": 1,
             "objects": [], 
-            "furniture": [{"name": "metal shelves", "is_container": True, "locked": False, "capacity": 5, "hazard_possible": True, "possible_hazard_types": ["unstable_shelf", "precarious_object"]}], 
+            "furniture": [{"name": "metal shelves", "is_container": True, "capacity": 5, "possible_items": ["Radiology Key Card"]}],
             "items_present": [], 
             "hazards_present": [], 
             "possible_hazards": [{"type": "unstable_shelf", "chance": 0.2, "object_name_override": "topmost shelf unit", "support_object_override": "metal shelves"}], 
@@ -775,13 +839,22 @@ rooms = {
             "locked": False, 
             "unlocks_with": None 
         },
-        "Radiology Wing Access": {
+        ROOM_RADIOLOGY_WING_ACCESS: {
             "description": "This area leads to the Radiology department. Heavy, lead-lined doors are visible ahead. Warning signs about radiation are posted on the walls.", 
-            "exits": {"west": "ER Hallway", "north": "MRI Control Room"}, 
+            "exits": {"south": ROOM_RADIOLOGY_WING_ACCESS, "east": ROOM_MRI_SCAN_ROOM}, "floor": 1,
+            "floor": 1,
             "objects": ["lead-lined doors", "radiation warning signs"], 
-            "furniture": [], 
+            "furniture": [{
+                "name": "control desk", "is_container": True, "locked": False, "capacity": 2,
+                "use_item_interaction": { # Interaction for Radiology Key Card
+                    "item_names_required": ["Radiology Key Card", "Medical Director Key Card"], 
+                    "action_effect": "activate_mri_hazard", 
+                    "message_success": "You swipe the {item_name} through a card reader on the control desk. Lights on the console flash, and you hear the MRI machine in the next room hum to life with a powerful surge!",
+                    "message_fail_item": "That key card doesn't seem to do anything with the control desk."
+                }
+            }],
             "items_present": [], 
-            "hazards_present": [], 
+            "hazards_present": [{"type": "short_circuiting_appliance", "chance": 0.15, "object_name_options": ["main console"], "support_object_override": "control desk"}],
             "possible_hazards": [], 
             "examine_details": {
                 "lead-lined doors": "Thick, heavy doors, presumably to block radiation from imaging equipment.", 
@@ -791,44 +864,74 @@ rooms = {
             "locked": False, 
             "unlocks_with": None 
         },
-        "MRI Control Room": {
-            "description": "A room filled with complex machinery and computer consoles, looking through a large observation window into the MRI Scan Room. Various monitors display technical readouts.", 
-            "exits": {"south": "Radiology Wing Access", "east": "MRI Scan Room"}, 
-            "objects": ["computer consoles", "observation window"], 
-            "furniture": [{"name": "control desk", "is_container": True, "locked": False, "capacity": 2}], 
-            "items_present": [], 
-            "hazards_present": [{"type": "short_circuiting_appliance", "chance": 0.15, "object_name_options": ["main console"], "support_object_override": "control desk"}], 
-            "possible_hazards": [], 
+        ROOM_MRI_CONTROL_ROOM: {
+            "description": "A room filled with complex machinery and computer consoles, looking through a large observation window into the MRI Scan Room. Various monitors display technical readouts.",
+            "exits": {"south": "Radiology Wing Access", "east": "MRI Scan Room"},
+            "floor": 1,
+            "objects": ["computer consoles", "observation window", "wheelchair", "metallic IV stand", "oxygen tank"],
+            "furniture": [
+                {
+                    "name": "control desk", 
+                    "is_container": True, 
+                    "locked": False, 
+                    "capacity": 2,
+                    "use_item_interaction": { # New interaction rule for using items on the desk
+                        "item_names_required": ["Radiology Kay Card", "Medical Director Key Card"], # List of valid key cards
+                        "action_effect": "activate_mri_hazard", # Custom effect identifier
+                        "message_success": "You swipe the {item_name} through a card reader on the control desk. Lights on the console flash, and you hear the MRI machine in the next room hum to life with a powerful surge!",
+                        "message_fail_item": "That key card doesn't seem to do anything with the control desk."
+                    }
+                }
+            ],
+            "items_present": [], # Key Card - Radiology will be placed here via its definition
+            "hazards_present": [{"type": "short_circuiting_appliance", "chance": 0.15, "object_name_options": ["main console"], "support_object_override": "control desk"}],
+            "possible_hazards": [],
             "examine_details": {
-                "computer consoles": "A bank of computers used to operate the MRI machine. Many screens show error messages.", 
-                "observation window": "A large, thick window providing a view into the MRI chamber.", 
-                "control desk": "The main desk for operating the MRI. Full of buttons and switches." 
+                "computer consoles": "A bank of computers used to operate the MRI machine. Many screens show error messages. There's a card reader slot on the main console.",
+                "observation window": "A large, thick window providing a view into the MRI chamber.",
+                "control desk": "The main desk for operating the MRI. Full of buttons and switches, and a prominent card reader."
             },
-            "first_entry_text": None, 
-            "locked": False, 
-            "unlocks_with": None 
+            "first_entry_text": None,
+            "locked": False,
+            "unlocks_with": None
         },
-        "MRI Scan Room": {
-            "description": "A stark white room dominated by a massive, cylindrical MRI machine. The air hums with latent power. Various medical equipment and metallic objects are scattered around.", 
-            "exits": {"west": "MRI Control Room"}, 
-            "objects": ["MRI machine", "metallic IV stand", "oxygen tank"], 
-            "furniture": [{"name": "equipment cart", "is_container": True, "locked": False, "capacity": 1}], 
-            "items_present": [], 
-            "hazards_present": [{"type": "mri_machine_hazard", "object_name_override": "MRI machine", "support_object_override": "center of room"}], 
-            "possible_hazards": [], 
+        ROOM_MRI_SCAN_ROOM: { 
+            "description": "A stark white room dominated by a massive, cylindrical MRI machine. The air hums with latent power. Various medical equipment and metallic objects are scattered around. A heavy door labeled 'MORGUE' is on one wall, and another sturdy door leads to a 'STAIRWELL' on the east wall.",
+            "exits": {"west": ROOM_MRI_CONTROL_ROOM, "east": ROOM_STAIRWELL, "south": ROOM_MORGUE}, "floor": 1,
+            "objects": ["MRI machine", "metallic IV stand", "oxygen tank", "Morgue Door", "Stairwell Door"],
+            "furniture": [{"name": "equipment cart", "is_container": True, "locked": False, "capacity": 1, "possible_items": [ITEM_CORONERS_OFFICE_KEY]}], # Coroner's key spawns here
+            "hazards_present": [
+                {"type": HAZARD_TYPE_MRI, "object_name_override": "MRI machine", "support_object_override": "center of room"}
+            ],
+            "items_present": ["Morgue Key Card"],
+            "hazards_present": [
+                {"type": "mri_machine_hazard", "object_name_override": "MRI machine", "support_object_override": "center of room"}
+            ],
+            "possible_hazards": [],
             "examine_details": {
-                "MRI machine": "The colossal MRI machine. Its powerful magnetic field is a significant danger if it activates unexpectedly.", 
-                "metallic IV stand": "A standard metal IV stand, dangerously close to the MRI.", 
-                "oxygen tank": "A green oxygen tank, also metallic and a projectile risk.", 
-                "equipment cart": "A metal cart with a few drawers. Might contain tools or supplies." 
+                "MRI machine": "The colossal MRI machine. Its powerful magnetic field is a significant danger if it activates unexpectedly.",
+                "metallic IV stand": "A standard metal IV stand, dangerously close to the MRI.",
+                "oxygen tank": "A green oxygen tank, also metallic and a projectile risk.",
+                "equipment cart": "A metal cart with a few drawers. Might contain tools or supplies.",
+                "Morgue Door": "A heavy, reinforced door. It looks like it could be forced, but that might be risky in here.",
+                "Stairwell Door": "A sturdy metal door, currently jammed shut. It looks like it might yield to repeated, forceful attempts."
             },
-            "first_entry_text": "The hum of the MRI machine is unnerving. You feel a strange pull on any metallic items you might be carrying.", 
-            "locked": False, 
-            "unlocks_with": None 
+            "first_entry_text": "The hum of the MRI machine is unnerving. You feel a strange pull on any metallic items you might be carrying.",
+            "locked": False,
+            "unlocks_with": None
+        },
+        ROOM_STAIRWELL: {
+            "description": "A cement-lined stairwell running behind the MRI scan room. Debris from the MRI room is scattered here.",
+            "floor": 1,
+            "locked": True,
+            "unlocks_with": {"Radiology Key Card", "Morgue Key Card", "Medical Director Key Card"},
+            "exits": {"west": "MRI Scan Room", "downstairs": "Hospital Morgue Hallway"}, 
+            "objects": ["scattered debris"]
         },
         "Hospital Morgue Hallway": {
             "description": "A cold, dimly lit hallway. The air is stale and carries a faint chemical odor. A sign on a door at the end reads 'MORGUE - AUTHORIZED PERSONNEL ONLY'. Another door is labeled 'Coroner's Office'.", 
-            "exits": {"south": "ER Hallway", "north": "Morgue Autopsy Suite", "east": "Coroner's Office"}, 
+            "exits": {"upstairs": ROOM_RADIOLOGY_WING_ACCESS, "north": "Morgue Autopsy Suite", "east": "Coroner's Office"}, "floor": -1,
+            "floor": -1,
             "objects": ["sign - MORGUE", "sign - Coroner's Office"], 
             "furniture": [], 
             "items_present": [], 
@@ -844,7 +947,7 @@ rooms = {
         },
         "Morgue Autopsy Suite": {
             "description": "A cold, sterile room with stainless steel tables and bright overhead lights. Trays of gleaming instruments lie nearby. Several refrigerated body storage units line one wall. The smell of disinfectant and something colder... and older... hangs in the air.", 
-            "exits": {"south": "Hospital Morgue Hallway"}, 
+            "exits": {"south": "Hospital Morgue Hallway"}, "floor": -1, # Corrected exit
             "objects": ["stainless steel tables", "trays of instruments", "refrigerated body storage units"], 
             "furniture": [{"name": "instrument cabinet", "is_container": True, "locked": False, "capacity": 2}], 
             "items_present": [], 
@@ -862,7 +965,7 @@ rooms = {
         },
         "Coroner's Office": {
             "description": "A surprisingly well-appointed office, a stark contrast to the rest of the hospital. Bookshelves line one wall, a large mahogany desk sits in the center, and framed diplomas adorn the walls. It smells of old books and faint pipe tobacco. This must have been William Bludworth's office.", 
-            "exits": {"west": "Hospital Morgue Hallway"}, 
+            "exits": {"west": "Morgue Autopsy Suite", "south": "Hospital Morgue Exit"}, 
             "objects": ["framed diplomas"], 
             "furniture": [ 
                 {"name": "mahogany desk", "is_container": True, "locked": True, "capacity": 3, "unlocks_with_item": "Desk Drawer Key"}, 
@@ -878,11 +981,11 @@ rooms = {
             },
             "first_entry_text": "This room feels different. More personal. The presence of Bludworth is strong here.", 
             "locked": True, 
-            "unlocks_with": "Coroner's Office Key" 
+            "unlocks_with": ITEM_CORONERS_OFFICE_KEY,
         },
         "Hospital Morgue Exit": { 
             "description": "A heavy steel door at the back of the morgue complex, leading to an exterior loading dock. This seems to be a way out.", 
-            "exits": {"south": "Morgue Autopsy Suite"}, 
+            "exits": {"north": "Coroner's Office"}, 
             "objects": ["heavy steel door"], 
             "furniture": [], 
             "items_present": [], 
@@ -1281,29 +1384,23 @@ rooms = {
             "fireplace_brick_slot_revealed": False, "sink_interactions": 0, "window_interactions": 0, "bookshelves_interactions": 0, "ceiling_fan_interactions": 0, "crate_interactions": 0, "has_newspaper_clipping": False, "stairs_interactions": 0 
         }
     }
-    }
+}
 
 # --- Item Definitions (Revamped Structure) ---
 keys = {
     # Key found in Hospital (Level 1), unlocks Hospital's Coroner's Office
-    "Hospital Office Key": { # You might need to create/place this if one doesn't exist for the hospital's office
-        "description": "A standard issue key, likely for an office. Stamped 'HCO'.",
-        "takeable": True, "is_key": True, "unlocks": "Coroner's Office", # Targets the room name
-        "location": "Reception Desk", # EXAMPLE: Place in Hospital Level 1 (e.g., in the reception desk container)
-        "container": "reception desk", # EXAMPLE
-        "is_hidden": True,
-        "level": 1, # Found in Hospital
-        "weight": DEFAULT_ITEM_WEIGHT
-    },
+
     # NEW KEY: Found in Hospital's Coroner's Office (Level 1), unlocks Bludworth's House Foyer (Level 2)
     "Bludworth's House Key": {
-        "description": "A heavy, ornate iron key with a 'B' insignia. Smells faintly of formaldehyde and old secrets. This must be the key to Bludworth's abandoned house.",
-        "takeable": True, "is_key": True,
+        "description": "A heavy brass key with 'Bludworth Residence' engraved on it.",
+        "examine_description": "This key likely opens the main entrance to the Bludworth house.",
+        "is_key": True,
+        "takeable": True,
         "unlocks": "Foyer", # Can still be used with "unlock Foyer" if at porch
         "location": "Coroner's Office", 
         "container": "mahogany desk", 
         "is_hidden": True,
-        "level": 1, 
+        "level": 1,
         "weight": HEAVY_ITEM_WEIGHT,
         "is_evidence": True,
         "use_on": ["front door"], # <<< ADD THIS
@@ -1363,17 +1460,63 @@ keys = {
         "level": 2,
         "weight": DEFAULT_ITEM_WEIGHT
     },
+
     "Coroner's Office Key": {
         "description": "A small, ornate key with a customized skull-shaped handle. 'Lakeview Hospital - Do Not Copy' is etched on the side. This must have been the key to Bludworth's office, maybe we'll find more answers there.",
         "takeable": True,
         "is_key": True,
-        "unlocks": "Coroner's Office",
-        "location": "MRI Scan Room",
+        "unlocks": "Coroner's Office", # The room it unlocks
+        "location": ROOM_MRI_SCAN_ROOM, # Fixed location
+        "container": "equipment cart",  # Placed in the equipment cart in the MRI room
+        "is_hidden": True, # Initially hidden in the cart
+        "is_metallic": True, # Crucial for MRI interaction
+        "level": 1, # Hospital level
+        "weight": DEFAULT_ITEM_WEIGHT,
+        "triggers_mri_on_pickup": True # Custom flag for GameLogic
+    },
+    "Radiology Key Card": {
+        "description": "A plastic key card labeled 'Radiology'. Grants access to restricted areas in the hospital's radiology wing and can activate certain equipment.",
+        "takeable": True,
+        "is_key": True,
+        "unlocks": [ROOM_RADIOLOGY_WING_ACCESS, ROOM_STAIRWELL], # Can unlock multiple things or be checked for specific interactions
+        # Spawn locations: hospital emergency entrance, supply closet, waiting room, patient room 101, or ER hallway
+        "spawn_locations": [ # GameLogic will pick one of these
+            {"room": "Hospital Emergency Entrance", "container": "reception desk"},
+            {"room": "Supply Closet", "container": "metal shelves"},
+            {"room": "Waiting Room", "container": "low table"},
+            {"room": "Patient Room 101", "container": "bedside table"},
+            {"room": "ER Hallway", "container": None} # Placed on floor in ER Hallway
+        ],
         "is_hidden": True,
         "level": 1,
-        "container": False,
+        "weight": DEFAULT_ITEM_WEIGHT,
+        "activates_mri_via_control_panel": True # Custom flag
+    },
+    "Morgue Key Card": {
+        "description": "A plastic key card labeled 'Morgue'. Used by hospital staff to access the morgue and related areas.",
+        "takeable": True,
+        "is_key": True,
+        "unlocks": [ROOM_MORGUE, ROOM_STAIRWELL, "Hospital Morgue Hallway"], # Unlocks Morgue and Stairwell
+        "location": ROOM_MRI_SCAN_ROOM, # Preferred spawn
+        "container": None, # Could be on the floor or in a non-specific container if not the Coroner's key cart
+        "is_hidden": True, # Or False if it's just lying around after MRI event
+        "level": 1,
+        "weight": DEFAULT_ITEM_WEIGHT,
+        "triggers_mri_on_pickup_if_in_mri_room": True # Custom flag
+    },
+    "Medical Director Key Card": {
+        "description": "A master key card for Lakeview Hospital. Bears the insignia of the Medical Director. Grants access to almost all secure areas.",
+        "takeable": True,
+        "is_key": True,
+        "is_master_key": True, # Custom flag for master key behavior
+        "unlocks": "all_hospital_level_1", # Special identifier for GameLogic
+        "activates": "all_hospital_level_1", # Special identifier
+        # Spawn: Rare spawn in a random container in the hospital
+        "is_rare_random_hospital_spawn": True, # Custom flag for placement logic
+        "is_hidden": True,
+        "level": 1,
         "weight": DEFAULT_ITEM_WEIGHT
-    }
+    },
 }
 
     # --- Evidence Items (from evidence) ---
@@ -1876,7 +2019,7 @@ evidence = {
         "character": "You"
     },
         "Morgue Log Excerpt": {
-        "description": "A torn page from an old morgue log. An entry reads: 'Victim: Nick O'Bannen, Flight 180 survivor. Cause: Bizarre decapitation by falling sign. Patterns align with W.B.'s theories on pre-emptive design. His insights are... unsettlingly accurate.'",
+        "description": "A torn page from an old morgue log. An entry reads: 'Victim: Howard Campbell, dead of acute facial/cranial trauma. Cause: Bizarre facial decapitation by falling in front of an active lawn mower. Patterns align with J.B.'s theories on pre-emptive design. His insights are... unsettlingly accurate.'",
         "takeable": True, "is_evidence": True, "level": 1, # Hospital
         "location": "Coroner's Office", # Assuming Coroner's Office is in level 1 (Hospital)
         "container": "mahogany desk", # Player needs to unlock and search the desk
@@ -1884,15 +2027,15 @@ evidence = {
         "weight": 0.1, "character": "William Bludworth (referenced)",
         "narrative_flag_on_collect": "found_bludworth_connection_in_hospital"
     },
-     "Bludworth's Note": { # Assuming this is a new evidence item
+        "Bludworth's Note": { 
         "description": "A hospital note from 'JB' regarding anomalous patterns in 'accidental' deaths over the years. An address is written at the bottom, 'for anybody who might need it'.",
-        "takeable": True, "is_evidence": True, "level": 1, # Hospital
+        "takeable": True, "is_evidence": True, "level": 1, 
         "location": "Coroner's Office", "container": "mahogany desk", "is_hidden": True,
         "weight": 0.1, "character": "William Bludworth",
-        "narrative_flag_on_collect": "found_bludworth_consult_note", # New flag
+        "narrative_flag_on_collect": "found_bludworth_consult_note", 
         "narrative_snippet_on_collect": "The chilling consultation note from Bludworth himself confirms your fears: these aren't accidents."
-    },
-}
+        },
+    }
 
 items = {
     # Update existing House items to level 2
@@ -1937,8 +2080,9 @@ items = {
         "description": "A puff of dust briefly hangs in the air.",
         "takeable": False,
         "duration_in_room_turns": 1 # How long the "effect" is noted
+        }
     }
-}
+
 
 
 # --- Hazard Master Data ---
@@ -2457,6 +2601,116 @@ hazards = {
             }
         }
     },
+    "mri_machine_hazard": {
+        "name": "Magnetic Resonance Imager",
+        "initial_state": "powered_down",
+        "placement_object": ["MRI machine"], # Should be defined in MRI Scan Room's hazards_present
+        "object_name_options": ["MRI machine"],
+        "player_interaction": {
+            "examine": {"chance_to_trigger": 0.05, "target_state": "flickering_power", "message": "The massive MRI machine hums faintly. A loose panel sparks when you touch it.", "aggression_modifier": 0.1},
+            "use_tool": {"chance_to_trigger": 0.3, "target_state": "power_surge", "message": "You mess with a control panel. Lights flash and the humming intensifies dangerously!", "aggression_modifier": 0.2}
+        },
+        "states": {
+            "powered_down": {
+                "description": "The {object_name} is silent and dark.",
+                "chance_to_progress": 0.02, "next_state": "flickering_power",
+                "aggression_influence": {"chance_to_progress_boost": 0.05}
+            },
+            "flickering_power": {
+                "description": "Lights on the {object_name} control panel flicker erratically. A low hum is audible.",
+                "environmental_effect": {"noise_level": "+1"},
+                "chance_to_progress": 0.1, "next_state": "power_surge",
+                "aggression_influence": {"chance_to_progress_boost": 0.1}
+            },
+            "power_surge": { # Can be triggered by Radiology Key Card
+                "description": "The {object_name} emits a loud whine and sparks fly from its casing! The magnetic field feels stronger.",
+                "environmental_effect": {"is_sparking": True, "noise_level": "+2"},
+                "chance_to_progress": 0.4, "next_state": "active_scan_pull", # Default progression
+                "aggression_influence": {"chance_to_progress_boost": 0.2}
+                # This state could also check if Coroner's Key is in room and transition to QTE sequence
+            },
+            "active_scan_pull": { # General active state, might pull loose items
+                "description": "The {object_name} is fully active, its powerful magnetic field yanking at anything metallic!",
+                "environmental_effect": {"noise_level": "+3"},
+                "autonomous_action": "mri_pull_objects", # Generic pull
+                "item_pull_damage": 2, # Less than QTE projectiles
+                "item_pull_message": "{pulled_item_name} is ripped from your grasp and flies into the MRI!",
+                "chance_to_progress": 0.05, "next_state": "catastrophic_failure",
+            },
+            # --- Coroner's Key QTE Sequence States ---
+            "coroners_key_qte_initiate_pull": {
+                "description": "The {object_name} ROARS to life! The Coroner's Key is ripped from your grasp by an irresistible force, slamming against the machine's housing!",
+                "environmental_effect": {"noise_level": "+4", "is_sparking": True},
+                "on_state_entry_special_action": "handle_coroners_key_magnetize", # GameLogic handles this
+                "chance_to_progress": 1.0, # Immediately progresses
+                "next_state": "qte_metal_shower_stage1",
+                "instant_hp_damage": 0 # The shock is the effect
+            },
+            "qte_metal_shower_stage1": {
+                "description": "Metallic objects in the room begin to rattle violently! Suddenly, a tray of scalpels and clamps rips from a nearby cart and flies towards your head!",
+                "autonomous_action": "_mri_qte_projectile_action", # HazardEngine handles this
+                "qte_projectile_name": "a tray of sharp medical instruments",
+                "qte_type": QTE_TYPE_DODGE_PROJECTILE,
+                "qte_duration": 3.0,
+                "damage_on_qte_fail": 4,
+                "next_state_after_qte": "qte_metal_shower_stage2", # Progresses on QTE resolution (success/fail)
+                "environmental_effect": {"noise_level": "+3"}
+            },
+            "qte_metal_shower_stage2": {
+                "description": "Before you can recover, a heavy oxygen tank tears loose from the wall, tumbling erratically towards you!",
+                "autonomous_action": "_mri_qte_projectile_action",
+                "qte_projectile_name": "a heavy oxygen tank",
+                "qte_type": QTE_TYPE_DODGE_PROJECTILE,
+                "qte_duration": 2.5,
+                "damage_on_qte_fail": 6,
+                "next_state_after_qte": "qte_metal_shower_stage3",
+                "environmental_effect": {"noise_level": "+4"}
+            },
+            "qte_metal_shower_stage3": {
+                "description": "The {object_name} shrieks! An entire metal gurney careens across the room, aimed straight for you!",
+                "autonomous_action": "_mri_qte_projectile_action",
+                "qte_projectile_name": "a metal gurney",
+                "qte_type": QTE_TYPE_DODGE_PROJECTILE,
+                "qte_duration": 2.0,
+                "damage_on_qte_fail": 10, # More damaging
+                "next_state_after_qte": "mri_overload_sequence_complete", # If player survives all stages
+                "environmental_effect": {"noise_level": "+5", "visibility": "patchy_smoke"}
+            },
+            "mri_overload_sequence_complete": {
+                "description": "The {object_name} shudders violently, sparks cascading from its panels. The magnetic field fluctuates wildly, then with a deafening CLANG and a shower of sparks, it dies. Smoke pours from the machine.",
+                "environmental_effect": {"noise_level": "+1", "is_sparking": False, "visibility": "dense_smoke"},
+                "on_state_entry_special_action": "handle_coroners_key_release", # GameLogic handles this
+                "chance_to_progress": 1.0,
+                "next_state": "mri_deactivated_key_released", # Final state for this path
+                "on_state_entry_unlock_room": "Morgue" # Unlocks Morgue door as part of sequence end
+            },
+            "mri_deactivated_key_released":{
+                "description": "The {object_name} is a smoking, sputtering wreck. The Coroner's Key lies on the floor nearby, released from the dead machine. The Morgue door is now accessible.",
+                "environmental_effect": {"noise_level": "0", "visibility": "dense_smoke"}
+                # Key is made takeable by GameLogic via on_state_entry_special_action of previous state
+            },
+            # --- End Coroner's Key QTE ---
+            "catastrophic_failure": { # General failure state if not Coroner's Key sequence
+                "description": "The {object_name} begins to shake violently, the magnetic coils creating a deafening noise as they overload!",
+                "environmental_effect": {"noise_level": "+4", "visibility":"patchy_smoke"},
+                "autonomous_action": "_mri_explosion_countdown", # Existing action
+                "countdown_turns": 2,
+                "explosion_death_message": "The MRI machine explodes catastrophically! The blast tears through the room, leaving nothing but destruction in its wake.",
+                "chance_to_progress": 1.0, "next_state": "exploded"
+            },
+            "exploded": {
+                "description": "What remains of the {object_name} is a smoking, twisted wreck. The explosion has destroyed much of the room.",
+                "environmental_effect": {"noise_level": "0", "visibility":"dense_smoke"}
+            },
+            "shorted_out": { # General safe state
+                "description": "With a final pop and a puff of acrid smoke, the {object_name} goes silent. The magnetic field is gone.",
+                "environmental_effect": {"noise_level": "0", "visibility":"normal"}
+            }
+            # Note: The door_force_attempt_reaction states are specific to forcing the Morgue door,
+            # which is a separate interaction path from finding the Coroner's Key.
+            # If finding Coroner's Key also unlocks Morgue door, that happens at the end of its QTE sequence.
+        }
+    },
     "precarious_object": {
         "name": "Precarious Object",
         "initial_state": "unstable",
@@ -2544,144 +2798,259 @@ hazards = {
             },
             "collapsed": {
                 "description": "The {object} are now a pile of broken timbers, blocking the way."
-            }
-        }
-    },
-    "mri_machine_hazard": {
-        "name": "Magnetic Resonance Imager",
-        "initial_state": "powered_down",
-        "placement_object": ["MRI machine"],
-        "object_name_options": ["MRI machine"],
-        "player_interaction": {
-            "examine": {
-                "chance_to_trigger": 0.05, "target_state": "flickering_power",
-                "message": "The massive MRI machine hums faintly. A loose panel sparks when you touch it.",
-                "aggression_modifier": 0.1
-            },
-            "use_tool": { 
-                "chance_to_trigger": 0.3, "target_state": "power_surge",
-                "message": "You mess with a control panel. Lights flash and the humming intensifies dangerously!",
-                "aggression_modifier": 0.2
+                }
             }
         },
-        "player_proximity_trigger": {
-            "state_requirements": ["flickering_power", "power_surge", "active_scan_pull"],
-            "chance_to_escalate": 0.2,
-            "condition_player_has_metal_items": True, 
-            "escalation_logic": [
-                {"from_state": "flickering_power", "to_state": "active_scan_pull", "message": "As you get closer, metallic items on you VIOLENTLY tug towards the MRI!"},
-                {"from_state": "power_surge", "to_state": "active_scan_pull", "message": "The surging MRI machine suddenly unleashes a powerful magnetic pulse!"}
-            ],
-            "aggression_influence_on_chance": 0.15
-        },
-        "states": {
-            "powered_down": {
-                "description": "The {object_name} is silent and dark.",
-                "chance_to_progress": 0.02, "next_state": "flickering_power",
-                "aggression_influence": {"chance_to_progress_boost": 0.05}
-            },
-            "flickering_power": {
-                "description": "Lights on the {object_name} control panel flicker erratically. A low hum is audible.",
-                "environmental_effect": {"noise_level": "+1"},
-                "chance_to_progress": 0.1, "next_state": "power_surge",
-                "aggression_influence": {"chance_to_progress_boost": 0.1}
-            },
-            "power_surge": {
-                "description": "The {object_name} emits a loud whine and sparks fly from its casing! The magnetic field feels stronger.",
-                "environmental_effect": {"is_sparking": True, "noise_level": "+2"},
-                "chance_to_progress": 0.4, "next_state": "active_scan_pull",
-                "aggression_influence": {"chance_to_progress_boost": 0.2},
-                "hazard_interaction": {
-                    "water_puddle": {"target_state": "electrified", "chance": 0.6, "aggression_influence_on_chance": 0.1, "message":"Sparks from the surging MRI arc into a nearby water puddle!"}
+        "mri_machine_hazard": {
+            "name": "Magnetic Resonance Imager",
+            "initial_state": "powered_down",  # Default initial state
+            "placement_object": ["MRI machine"],
+            "object_name_options": ["MRI machine"],
+            "player_interaction": {
+                "examine": {
+                    "chance_to_trigger": 0.05, "target_state": "flickering_power",
+                    "message": "The massive MRI machine hums faintly. A loose panel sparks when you touch it.",
+                    "aggression_modifier": 0.1
+                },
+                "use_tool": {
+                    "chance_to_trigger": 0.3, "target_state": "power_surge",
+                    "message": "You mess with a control panel. Lights flash and the humming intensifies dangerously!",
+                    "aggression_modifier": 0.2
                 }
             },
-                        "containment_field_unstable": {
-                "description": "Alarms blare! The {object_name}'s magnetic containment field is wildly unstable! The observation window into the control room begins to groan and crack under unseen pressure!",
-                "environmental_effect": {"noise_level": "+3", "is_sparking": True},
-                "chance_to_progress": 0.7, "next_state": "pulling_small_objects_to_control_room",
-                "aggression_influence": {"chance_to_progress_boost": 0.1},
-                "message_if_player_in_control_room": "You hear loud alarms from the MRI Scan Room and see the observation window visibly distorting!" # Specific message if player is in control room
+            "player_proximity_trigger": {
+                "state_requirements": ["flickering_power", "power_surge", "active_scan_pull"],
+                "chance_to_escalate": 0.2,
+                "condition_player_has_metal_items": True,
+                "escalation_logic": [
+                    {"from_state": "flickering_power", "to_state": "active_scan_pull", "message": "As you get closer, metallic items on you VIOLENTLY tug towards the MRI!"},
+                    {"from_state": "power_surge", "to_state": "active_scan_pull", "message": "The surging MRI machine suddenly unleashes a powerful magnetic pulse!"}
+                ],
+                "aggression_influence_on_chance": 0.15
             },
-            "pulling_small_objects_to_control_room": {
-                "description": "With a shower of sparks, the {object_name} unleashes a focused magnetic pulse! Small metallic objects from the scan room (tools, trays) are violently sucked towards the observation window!",
-                "autonomous_action": "_mri_pull_through_window", # NEW HazardEngine method
-                "object_type_pulled": "small tools and trays", # For description
-                "qte_type_to_trigger": QTE_TYPE_DODGE_PROJECTILE,
-                "qte_duration": 3,
-                "damage_on_qte_fail": 3,
-                "fatal_on_qte_fail": False,
-                "next_state_on_qte_resolved": "pulling_medium_objects_to_control_room", # Progresses regardless of QTE outcome (if not fatal)
-                "environmental_effect": {"noise_level": "+4"}
+            "states": {
+                "powered_down": {
+                    "description": "The {object_name} is silent and dark.",
+                    "chance_to_progress": 0.02, "next_state": "flickering_power",
+                    "aggression_influence": {"chance_to_progress_boost": 0.05}
+                },
+                "flickering_power": {
+                    "description": "Lights on the {object_name} control panel flicker erratically. A low hum is audible.",
+                    "environmental_effect": {"noise_level": "+1"},
+                    "chance_to_progress": 0.1, "next_state": "power_surge",
+                    "aggression_influence": {"chance_to_progress_boost": 0.1}
+                },
+                "power_surge": {
+                    "description": "The {object_name} emits a loud whine and sparks fly from its casing! The magnetic field feels stronger.",
+                    "environmental_effect": {"is_sparking": True, "noise_level": "+2"},
+                    "chance_to_progress": 0.4, "next_state": "active_scan_pull",
+                    "aggression_influence": {"chance_to_progress_boost": 0.2},
+                    "hazard_interaction": {
+                        "water_puddle": {"target_state": "electrified", "chance": 0.6, "aggression_influence_on_chance": 0.1, "message":"Sparks from the surging MRI arc into a nearby water puddle!"}
+                    }
+                },
+                "active_scan_pull": {
+                    "description": "The {object_name} is fully active, its powerful magnetic field yanking at anything metallic with terrifying force!",
+                    "environmental_effect": {"noise_level": "+3"},
+                    "autonomous_action": "mri_pull_objects",
+                    "instant_death_if_player_has_large_metal": True,
+                    "death_message_large_metal": "A large metallic object you're carrying is violently ripped from your grasp and slams into you as it's pulled into the {object_name}!",
+                    "room_metal_objects": ["Oxygen Tank", "IV Pole", "Metal Wheelchair", "Steel Equipment Cart"],
+                    "room_metal_object_death_chance": 0.7,
+                    "room_metal_object_death_message": "The {pulled_object} is suddenly yanked across the room by the powerful magnetic field! It slams into you with devastating force, crushing you against the MRI machine.",
+                    "item_pull_damage": 5,
+                    "item_pull_message": "{pulled_item_name} is ripped from your grasp and flies into the MRI, striking you on the way!",
+                    "chance_to_progress": 0.05, "next_state": "catastrophic_failure",
+                    "aggression_influence": {"chance_to_progress_boost": 0.1}
+                },
+                "catastrophic_failure": {
+                    "description": "The {object_name} begins to shake violently, the magnetic coils creating a deafening noise as they overload!",
+                    "environmental_effect": {"noise_level": "+4", "visibility":"patchy_smoke"},
+                    "autonomous_action": "mri_explosion_countdown",
+                    "countdown_turns": 2,
+                    "countdown_message": "The MRI machine is going to explode! You need to get out NOW!",
+                    "explosion_radius_rooms": 1,
+                    "explosion_death_message": "The MRI machine explodes in a catastrophic failure! The blast tears through the room, leaving nothing but destruction in its wake.",
+                    "chance_to_progress": 1.0, "next_state": "exploded"
+                },
+                "exploded": {
+                    "description": "What remains of the {object_name} is a smoking, twisted wreck. The explosion has destroyed much of the room.",
+                    "environmental_effect": {"noise_level": "0", "visibility":"dense_smoke"}
+                },
+                "shorted_out": {
+                    "description": "With a final pop and a puff of acrid smoke, the {object_name} goes silent. The magnetic field is gone.",
+                    "environmental_effect": {"noise_level": "0", "visibility":"normal"}
+                },
+
+
+            # --- NEW MRI QTE SEQUENCE STATES ---
+            "mri_qte_sequence_start_and_lock_doors": {
+                "description": "The {object_name} ROARS to life with terrifying power! The doors to the Morgue and Stairwell SLAM SHUT and lock with a heavy thud. Sparks fly from the control panel! What? The magnetic force seems to be messing with the locks!",
+                "environmental_effect": {"noise_level": "+5", "is_sparking": True, "visibility": "patchy_smoke"},
+                "on_state_entry_special_action": "mri_lock_doors_and_initiate_qtes", # GameLogic will handle this
+                "chance_to_progress": 1.0, # Immediately progresses to first QTE challenge logic
+                "next_state": "mri_qte_challenge_1_button_mash_setup" # Setup state for the first QTE
             },
-            "pulling_medium_objects_to_control_room": {
-                "description": "The magnetic forces intensify! Larger items (a monitor, a small cart) from the scan room are now being dragged towards the shattering observation window!",
-                "autonomous_action": "_mri_pull_through_window",
-                "object_type_pulled": "a computer monitor and a small metal cart",
-                "qte_type_to_trigger": QTE_TYPE_DODGE_PROJECTILE,
-                "qte_duration": 2.5, # Quicker!
-                "damage_on_qte_fail": 7,
-                "fatal_on_qte_fail": False, # Could be fatal if HP is low
-                "next_state_on_qte_resolved": "pulling_large_object_to_control_room",
-                "environmental_effect": {"noise_level": "+4", "visibility": "patchy_smoke"} # Due to debris
+            "mri_qte_challenge_1_button_mash_setup": {
+                "description": "A console near the emergency stop is flickering wildly! You might be able to override the surge if you're fast enough!",
+                "autonomous_action": "_trigger_mri_qte_stage", # HazardEngine action to call GameLogic.trigger_qte
+                "qte_stage_context": {
+                    "qte_type": QTE_TYPE_BUTTON_MASH,
+                    "duration": 5.0,
+                    "ui_prompt_message": "RAPIDLY HIT THE OVERRIDE! (Mash the button/key shown in popup!)",
+                    "expected_input_word": "mash_success", # Internal signal UI will send on success
+                    "input_type": "button_mash", # New type for QTEPopup
+                    "target_mash_count": 10,
+                    "success_message": "You slammed the override! The machine shudders!",
+                    "failure_message": "Too slow on the override! The MRI's power fluctuates dangerously!",
+                    "hp_damage_on_failure": 3,
+                    "is_fatal_on_failure": False,
+                    "next_state_after_qte_success": "mri_qte_challenge_2_type_word_setup",
+                    "next_state_after_qte_failure": "mri_qte_failure_damage_1" # Go to a damage state
+                }
             },
-            "pulling_large_object_to_control_room": {
-                "description": "The observation window shatters completely! The {object_name} groans as it pulls a heavy [metallic IV stand or oxygen tank] from the scan room, sending it hurtling into the control room like a missile!",
-                "autonomous_action": "_mri_pull_through_window",
-                "object_type_pulled": "a heavy metallic gurney", # Or randomize: "metallic IV stand", "oxygen tank"
-                "qte_type_to_trigger": QTE_TYPE_DODGE_PROJECTILE,
-                "qte_duration": 2, # Very quick!
-                "damage_on_qte_fail": 20, # Effectively fatal
-                "fatal_on_qte_fail": True,
-                "next_state_on_qte_resolved": "mri_field_collapsed", # If player survives
-                "environmental_effect": {"noise_level": "+5", "visibility": "dense_smoke"}
+            "mri_qte_challenge_2_type_word_setup": {
+                "description": "The main console flashes a critical system alert: 'MANUAL INPUT REQUIRED'. A prompt appears: EMERGENCY SHUNT.",
+                "autonomous_action": "_trigger_mri_qte_stage",
+                "qte_stage_context": {
+                    "qte_type": QTE_TYPE_SEQUENCE_INPUT, # Or just use existing word for one word
+                    "duration": 6.0,
+                    "ui_prompt_message": "Type 'SHUNT' to reroute power!",
+                    "expected_input_word": "shunt", # The word to type
+                    "input_type": "word",
+                    "success_message": "Power rerouted! The machine groans, still unstable!",
+                    "failure_message": "Wrong command! The MRI sparks violently!",
+                    "hp_damage_on_failure": 4,
+                    "is_fatal_on_failure": False,
+                    "next_state_after_qte_success": "mri_qte_challenge_3_sequence_input_setup",
+                    "next_state_after_qte_failure": "mri_qte_failure_damage_2"
+                }
             },
-            "mri_field_collapsed": {
-                "description": "With a final, shuddering groan, the {object_name}'s magnetic field collapses. The immediate danger of projectiles seems over, but the machine is sparking erratically.",
-                "environmental_effect": {"noise_level": "+1", "is_sparking": True},
-                "chance_to_progress": 0.2, "next_state": "shorted_out", # Or back to overheating/catastrophic_failure
-                "aggression_influence": {"chance_to_progress_boost": 0.1}
+            "mri_qte_challenge_3_sequence_input_setup": {
+                "description": "System override needed! The console displays: 'Initiate Magnetic Field Collapse Sequence: D V P'",
+                "autonomous_action": "_trigger_mri_qte_stage",
+                "qte_stage_context": {
+                    "qte_type": QTE_TYPE_SEQUENCE_INPUT,
+                    "duration": 8.0,
+                    "ui_prompt_message": "Enter Emergency Sequence: D V P (e.g., type 'DVP')",
+                    "expected_input_word": "dvp", # The sequence to type (no spaces for simplicity)
+                    "input_type": "word", # QTEPopup handles single word input
+                    "success_message": "Sequence Accepted! The magnetic field is destabilizing!",
+                    "failure_message": "Incorrect Sequence! Catastrophic overload imminent!",
+                    "hp_damage_on_failure": 5,
+                    "is_fatal_on_failure": True, # Failure here could be fatal
+                    "next_state_after_qte_success": "mri_field_collapsing_qte_success",
+                    "next_state_after_qte_failure": "catastrophic_failure" # Leads to explosion
+                }
             },
-            "active_scan_pull": {
-                "description": "The {object_name} is fully active, its powerful magnetic field yanking at anything metallic with terrifying force!",
-                "environmental_effect": {"noise_level": "+3"},
-                "autonomous_action": "mri_pull_objects",
-                "instant_death_if_player_has_large_metal": True,
-                "death_message_large_metal": "A large metallic object you're carrying is violently ripped from your grasp and slams into you as it's pulled into the {object_name}!",
-                "room_metal_objects": ["Oxygen Tank", "IV Pole", "Metal Wheelchair", "Steel Equipment Cart"],
-                "room_metal_object_death_chance": 0.7,
-                "room_metal_object_death_message": "The {pulled_object} is suddenly yanked across the room by the powerful magnetic field! It slams into you with devastating force, crushing you against the MRI machine.",
-                "item_pull_damage": 5,
-                "item_pull_message": "{pulled_item_name} is ripped from your grasp and flies into the MRI, striking you on the way!",
-                "chance_to_progress": 0.05, "next_state": "catastrophic_failure",
-                "aggression_influence": {"chance_to_progress_boost": 0.1}
+            "mri_qte_failure_damage_1": { # State after failing QTE 1
+                "description": "The MRI machine surges, zapping you with raw energy!",
+                "on_state_entry_apply_damage": 3, # Handled by HazardEngine
+                "chance_to_progress": 1.0,
+                "next_state": "mri_qte_challenge_2_type_word_setup" # Player gets another chance but is weaker
             },
-            "catastrophic_failure": {
+             "mri_qte_failure_damage_2": { # State after failing QTE 2
+                "description": "Another powerful surge from the MRI rocks the room, and you're thrown against a console!",
+                "on_state_entry_apply_damage": 4,
+                "chance_to_progress": 1.0,
+                "next_state": "mri_qte_challenge_3_sequence_input_setup"
+            },
+            "mri_field_collapsing_qte_success": {
+                "description": "With a deafening screech and a final shower of sparks, the {object_name} groans. The intense magnetic pull lessens, and the room trembles. Smoke pours from the machine. The door locks disengage with a CLUNK!",
+                "environmental_effect": {"noise_level": "+1", "is_sparking": False, "visibility": "dense_smoke"},
+                "on_state_entry_special_action": "mri_unlock_doors_and_breakdown", # GameLogic will handle this
+                "chance_to_progress": 1.0,
+                "next_state": "mri_broken_doors_open_qte_path"
+            },
+            "mri_broken_doors_open_qte_path": {
+                "description": "The {object_name} is a smoking, sputtering wreck. The doors to the Morgue and Stairwell are now accessible.",
+                "environmental_effect": {"noise_level": "0", "visibility": "dense_smoke"}
+            },
+            # --- End NEW MRI QTE SEQUENCE ---
+
+            # Existing states like coroner's key pull, metal shower, etc.
+            # These might become alternate paths or be partially integrated if desired.
+            # For now, the new QTE sequence is a distinct path triggered by "mri_qte_sequence_start_and_lock_doors"
+            "coroners_key_qte_initiate_pull": { # ... existing, this could lead to mri_qte_sequence_start_and_lock_doors
+                "description": "The {object_name} ROARS to life! The Coroner's Key is ripped from your grasp by an irresistible force, slamming against the machine's housing!",
+                "environmental_effect": {"noise_level": "+4", "is_sparking": True},
+                "on_state_entry_special_action": "handle_coroners_key_magnetize",
+                "chance_to_progress": 1.0,
+                "next_state": "mri_qte_sequence_start_and_lock_doors" # <<< MODIFIED to start new sequence
+            },
+            # qte_metal_shower_stage1,2,3 might be removed if the above sequence replaces it entirely
+            # or they could be a different type of MRI malfunction.
+            # For clarity, let's assume the new sequence above is the primary one for door locking.
+
+            "catastrophic_failure": { # ... existing ...
                 "description": "The {object_name} begins to shake violently, the magnetic coils creating a deafening noise as they overload!",
                 "environmental_effect": {"noise_level": "+4", "visibility":"patchy_smoke"},
-                "autonomous_action": "mri_explosion_countdown",
+                "autonomous_action": "_mri_explosion_countdown",
                 "countdown_turns": 2,
-                "countdown_message": "The MRI machine is going to explode! You need to get out NOW!",
-                "explosion_radius_rooms": 1, # Adjacent rooms affected
-                "explosion_death_message": "The MRI machine explodes in a catastrophic failure! The blast tears through the room, leaving nothing but destruction in its wake.",
+                "explosion_death_message": "The MRI machine explodes catastrophically! The blast tears through the room, leaving nothing but destruction in its wake.",
                 "chance_to_progress": 1.0, "next_state": "exploded"
             },
-            "exploded": {
+            "exploded": { # ... existing ...
                 "description": "What remains of the {object_name} is a smoking, twisted wreck. The explosion has destroyed much of the room.",
                 "environmental_effect": {"noise_level": "0", "visibility":"dense_smoke"}
             },
-            "overheating": {
-                "description": "The {object_name} is making strange grinding noises and smells of burning electronics. The magnetic pull weakens.",
-                "environmental_effect": {"noise_level": "+1", "visibility":"patchy_smoke"},
-                "chance_to_progress": 0.2, "next_state": "shorted_out",
-                "aggression_influence": {"chance_to_progress_boost": 0.1}
-            },
-            "shorted_out": {
+            "shorted_out": { # General safe state
                 "description": "With a final pop and a puff of acrid smoke, the {object_name} goes silent. The magnetic field is gone.",
                 "environmental_effect": {"noise_level": "0", "visibility":"normal"}
+            },
+            # Remove the old door_force_attempt_reaction states if this new sequence replaces that logic.
+    
+                # --- DOOR FORCE SEQUENCE ---
+            "door_force_attempt_reaction": {
+                "description": "As you strain against the Morgue door, the {object_name} behind you groans ominously. Lights flicker wildly, and a powerful hum fills the room. Metal objects in the room begin to rattle!",
+                "environmental_effect": {"noise_level": "+2", "is_sparking": True},
+                "chance_to_progress": 1.0,
+                "next_state": "qte_metal_shower_1",
+                "instant_hp_damage": 0
+            },
+            "qte_metal_shower_1": {
+                "description": "Suddenly, a tray of scalpels and clamps rips from a nearby cart and flies towards your head!",
+                "autonomous_action": "_mri_qte_projectile_action",
+                "qte_projectile_name": "a tray of sharp medical instruments",
+                "qte_type": QTE_TYPE_DODGE_PROJECTILE,
+                "qte_duration": 3.0,
+                "damage_on_qte_fail": 4,
+                "next_state_after_qte": "qte_metal_shower_2",
+                "environmental_effect": {"noise_level": "+3"}
+            },
+            "qte_metal_shower_2": {
+                "description": "Before you can recover, a heavy oxygen tank tears loose from the wall, tumbling erratically towards you!",
+                "autonomous_action": "_mri_qte_projectile_action",
+                "qte_projectile_name": "a heavy oxygen tank",
+                "qte_type": QTE_TYPE_DODGE_PROJECTILE,
+                "qte_duration": 2.5,
+                "damage_on_qte_fail": 6,
+                "next_state_after_qte": "qte_metal_shower_3",
+                "environmental_effect": {"noise_level": "+4"}
+            },
+            "qte_metal_shower_3": {
+                "description": "The {object_name} shrieks! An entire metal gurney careens across the room, aimed straight for you!",
+                "autonomous_action": "_mri_qte_projectile_action",
+                "qte_projectile_name": "a metal gurney",
+                "qte_type": QTE_TYPE_DODGE_PROJECTILE,
+                "qte_duration": 2.0,
+                "damage_on_qte_fail": 10,
+                "next_state_after_qte": "mri_field_collapsing_after_force",
+                "environmental_effect": {"noise_level": "+5", "visibility": "patchy_smoke"}
+            },
+            "mri_field_collapsing_after_force": {
+                "description": "With a final, violent shudder and a shower of sparks, the {object_name} groans and the intense magnetic pull lessens. The air crackles, and then... an eerie quiet. Smoke pours from the machine.",
+                "environmental_effect": {"noise_level": "+1", "is_sparking": False, "visibility": "dense_smoke"},
+                "chance_to_progress": 1.0,
+                "next_state": "mri_broken_door_open",
+                "on_state_entry_unlock_room": "Morgue"
+            },
+            "mri_broken_door_open": {
+                "description": "The {object_name} is a smoking, sputtering wreck. The Morgue door, perhaps damaged by the chaos or the strain, now stands slightly ajar.",
+                "environmental_effect": {"noise_level": "0", "visibility": "dense_smoke"}
+                }
             }
-        }
-    },
-
+        },
     "leaking_pipe": {
         "name": "Leaking Pipe",
         "initial_state": "dripping",

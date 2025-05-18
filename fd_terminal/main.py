@@ -1,5 +1,10 @@
 import os
 import logging
+from kivy.config import Config
+Config.set('input', 'mouse', 'mouse,disable_multitouch')
+Config.set('input', 'wm_touch', '') # May also help disable simulated touch events from window manager
+Config.set('input', 'wm_pen', '')   # Disable pen events if not needed
+
 from kivy.app import App
 from kivy.uix.screenmanager import ScreenManager, SlideTransition
 # from kivy.core.window import Window # Uncomment if you use Window.size
@@ -49,6 +54,45 @@ logging.basicConfig(filename=log_file_path, level=logging.INFO,
                     datefmt='%Y-%m-%d %H:%M:%S',
                     filemode='w') # Use 'w' to overwrite log on each start, or 'a' to append.
 
+def cleanup_corrupted_saves():
+    import os
+    import json
+    
+    save_dir = os.path.join(os.path.dirname(__file__), 'saves')
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+        return
+        
+    for filename in os.listdir(save_dir):
+        if not filename.startswith('savegame_') or not filename.endswith('.json'):
+            continue
+            
+        # Delete any files with {} in the name (improperly formatted)
+        if "{}" in filename:
+            try:
+                os.remove(os.path.join(save_dir, filename))
+                print(f"Removed improperly named save file: {filename}")
+            except Exception as e:
+                print(f"Error removing file {filename}: {e}")
+            continue
+            
+        # Check if file content is valid JSON
+        filepath = os.path.join(save_dir, filename)
+        try:
+            with open(filepath, 'r') as f:
+                content = f.read()
+                if not content.strip():
+                    continue
+                json.loads(content)  # Test if valid JSON
+        except json.JSONDecodeError:
+            backup_path = filepath + ".corrupted"
+            try:
+                os.rename(filepath, backup_path)
+                print(f"Renamed corrupted save {filename} to {filename}.corrupted")
+            except Exception as e:
+                print(f"Error handling corrupted file {filename}: {e}")
+
+cleanup_corrupted_saves()
 class FinalDestinationApp(App):
     # Application-level properties to share data/state between screens if needed
     selected_character_class = None # Stores selected character class from CharacterSelectScreen

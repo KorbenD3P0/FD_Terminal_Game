@@ -1,0 +1,9 @@
+End-User License Agreement for FD Terminal Game
+
+By installing this software, you agree to the following terms:
+
+1. This is a personal copy for your use only.
+2. You may not redistribute this software.
+3. The developers are not liable for any issues arising from use of this software.
+
+All rights reserved.
