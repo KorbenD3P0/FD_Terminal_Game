@@ -6,7 +6,8 @@ Welcome to **Final Destination Terminal**, a text-based adventure game with a Ki
 
 ## Game Premise
 
-You are a survivor of a recent mass-casualty event. Haunted by the premonition that saved your life, you now find yourself on Death's List. The game begins as you accompany the body of the most recent ex-survivor to a place deeply connected with the mysteries of Death – perhaps the infamous Bludworth residence or the unsettling Lakeview Hospital. Your goal is to explore these cursed locations, gather evidence related to past events and victims, and understand the intricate patterns of Death's design, all while trying to stay one step ahead of your own grim fate.
+You are a survivor of a recent mass-casualty event. Haunted by the premonition that saved your life, you now find yourself on Death's List simply because you listened and avoided your original fate. The game begins as you accompany the body of the most recent ex-survivor to a place deeply connected with the mysteries of Death – the unsettling Hope River Hospital, and perhaps even the infamous William Bludworth's residence
+Your goal is to explore these cursed locations, gather evidence related to past events and victims, and understand the intricate patterns of Death's design, all while trying to stay one step ahead of your own grim fate.
 
 ## Key Features
 
